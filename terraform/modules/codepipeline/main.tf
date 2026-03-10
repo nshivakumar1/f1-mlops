@@ -1,3 +1,8 @@
+resource "aws_codestarconnections_connection" "github" {
+  name          = "${var.project}-github"
+  provider_type = "GitHub"
+}
+
 resource "aws_codebuild_project" "f1" {
   name          = "${var.project}-build"
   service_role  = var.role_arn
@@ -48,15 +53,14 @@ resource "aws_codepipeline" "f1" {
     action {
       name             = "GitHub"
       category         = "Source"
-      owner            = "ThirdParty"
-      provider         = "GitHub"
+      owner            = "AWS"
+      provider         = "CodeStarSourceConnection"
       version          = "1"
       output_artifacts = ["source_output"]
       configuration = {
-        Owner      = var.github_owner
-        Repo       = var.github_repo
-        Branch     = var.github_branch
-        OAuthToken = "{{resolve:secretsmanager:f1-mlops/github-token}}"
+        ConnectionArn    = aws_codestarconnections_connection.github.arn
+        FullRepositoryId = "${var.github_owner}/${var.github_repo}"
+        BranchName       = var.github_branch
       }
     }
   }
@@ -64,11 +68,11 @@ resource "aws_codepipeline" "f1" {
   stage {
     name = "Test"
     action {
-      name            = "RunTests"
-      category        = "Build"
-      owner           = "AWS"
-      provider        = "CodeBuild"
-      version         = "1"
+      name             = "RunTests"
+      category         = "Build"
+      owner            = "AWS"
+      provider         = "CodeBuild"
+      version          = "1"
       input_artifacts  = ["source_output"]
       output_artifacts = ["test_output"]
       configuration = {

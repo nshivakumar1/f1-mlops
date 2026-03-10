@@ -6,4 +6,7 @@ variable "role_arn" { type = string }
 variable "s3_bucket" { type = string }
 variable "github_owner" { type = string }
 variable "github_repo" { type = string }
-variable "github_branch" { type = string default = "main" }
+variable "github_branch" {
+  type    = string
+  default = "main"
+}

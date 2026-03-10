@@ -25,24 +25,35 @@
         }
       },
       "ResultPath": "$.glue_result",
-      "Next": "WaitForGlue",
+      "Next": "StartSageMakerPipeline",
       "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "PipelineFailed"}]
-    },
-    "WaitForGlue": {
-      "Type": "Wait",
-      "Seconds": 30,
-      "Next": "StartSageMakerPipeline"
     },
     "StartSageMakerPipeline": {
       "Type": "Task",
-      "Resource": "arn:aws:states:::sagemaker:startPipelineExecution.sync",
+      "Resource": "arn:aws:states:::aws-sdk:sagemaker:startPipelineExecution",
       "Parameters": {
         "PipelineName": "${project}-training-pipeline",
         "PipelineExecutionDisplayName": "auto-triggered",
+        "ClientRequestToken.$": "$$.Execution.Name",
         "PipelineParameters": [
           {"Name": "InputDataUrl", "Value.$": "States.Format('s3://${s3_bucket}/processed/{}', $.session_key)"},
           {"Name": "ModelOutputUrl", "Value": "s3://${s3_bucket}/models/"}
         ]
+      },
+      "ResultPath": "$.pipeline_start",
+      "Next": "WaitForPipeline",
+      "Catch": [{"ErrorEquals": ["States.ALL"], "Next": "PipelineFailed"}]
+    },
+    "WaitForPipeline": {
+      "Type": "Wait",
+      "Seconds": 120,
+      "Next": "CheckPipelineStatus"
+    },
+    "CheckPipelineStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:sagemaker:describePipelineExecution",
+      "Parameters": {
+        "PipelineExecutionArn.$": "$.pipeline_start.PipelineExecutionArn"
       },
       "ResultPath": "$.pipeline_result",
       "Next": "CheckModelApproval",
@@ -55,6 +66,11 @@
           "Variable": "$.pipeline_result.PipelineExecutionStatus",
           "StringEquals": "Succeeded",
           "Next": "UpdateEndpoint"
+        },
+        {
+          "Variable": "$.pipeline_result.PipelineExecutionStatus",
+          "StringEquals": "Executing",
+          "Next": "WaitForPipeline"
         }
       ],
       "Default": "PipelineFailed"
@@ -92,7 +108,7 @@
       "Parameters": {
         "TopicArn": "arn:aws:sns:${aws_region}:${account_id}:${project}-alerts",
         "Subject": "F1 MLOps Pipeline FAILED",
-        "Message.$": "States.Format('Pipeline failed at state: {}. Error: {}', $$.State.Name, $.error)"
+        "Message": "One or more pipeline steps failed. Check CloudWatch logs for details."
       },
       "Next": "Fail"
     },

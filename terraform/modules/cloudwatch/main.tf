@@ -36,7 +36,7 @@ resource "aws_cloudwatch_metric_alarm" "sagemaker_latency" {
   metric_name         = "ModelLatency"
   namespace           = "AWS/SageMaker"
   period              = 60
-  statistic           = "p99"
+  extended_statistic  = "p99"
   threshold           = 3000
   treat_missing_data  = "notBreaching"
   dimensions          = { EndpointName = var.sagemaker_endpoint, VariantName = "dry-race-v1" }
