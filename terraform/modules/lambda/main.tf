@@ -39,6 +39,7 @@ resource "aws_lambda_function" "enrichment" {
       SAGEMAKER_ENDPOINT = var.sagemaker_endpoint
       SNS_TOPIC_ARN      = var.sns_topic_arn
       AWS_REGION_NAME    = var.aws_region
+      LOGSTASH_ENDPOINT  = var.logstash_url
     }
   }
 

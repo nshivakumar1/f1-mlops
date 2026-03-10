@@ -12,9 +12,9 @@ output "sagemaker_endpoint" {
   value       = module.sagemaker.endpoint_name
 }
 
-output "opensearch_endpoint" {
-  description = "OpenSearch / Kibana endpoint"
-  value       = module.opensearch.domain_endpoint
+output "kibana_url" {
+  description = "Self-hosted Kibana URL (ELK on EC2)"
+  value       = module.elk.kibana_url
 }
 
 output "sns_topic_arn" {
@@ -25,4 +25,14 @@ output "sns_topic_arn" {
 output "stepfunctions_arn" {
   description = "Step Functions state machine ARN"
   value       = module.stepfunctions.state_machine_arn
+}
+
+output "logstash_url" {
+  description = "Logstash HTTP input URL for real-time Lambda push"
+  value       = module.elk.logstash_url
+}
+
+output "elk_instance_id" {
+  description = "EC2 instance ID running the ELK stack"
+  value       = module.elk.instance_id
 }

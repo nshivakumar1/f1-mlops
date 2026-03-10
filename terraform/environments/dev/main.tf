@@ -53,6 +53,7 @@ module "lambda" {
   s3_bucket            = module.s3.data_bucket_name
   sagemaker_endpoint   = module.sagemaker.endpoint_name
   sns_topic_arn        = module.cloudwatch.sns_topic_arn
+  logstash_url         = module.elk.logstash_url
 }
 
 module "eventbridge" {
@@ -85,21 +86,20 @@ module "api_gateway" {
   rest_handler_name   = module.lambda.rest_handler_function_name
 }
 
-module "opensearch" {
-  source      = "../../modules/opensearch"
+module "elk" {
+  source      = "../../modules/elk"
   project     = var.project
   environment = var.environment
-  account_id  = var.account_id
+  aws_region  = var.aws_region
+  s3_bucket   = module.s3.data_bucket_name
 }
 
 module "kinesis" {
-  source              = "../../modules/kinesis"
-  project             = var.project
-  environment         = var.environment
-  opensearch_endpoint = module.opensearch.domain_endpoint
-  opensearch_arn      = module.opensearch.domain_arn
-  role_arn            = module.iam.firehose_role_arn
-  s3_bucket           = module.s3.data_bucket_name
+  source      = "../../modules/kinesis"
+  project     = var.project
+  environment = var.environment
+  role_arn    = module.iam.firehose_role_arn
+  s3_bucket   = module.s3.data_bucket_name
 }
 
 module "cloudwatch" {
