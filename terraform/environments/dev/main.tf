@@ -22,7 +22,7 @@ provider "aws" {
       Project     = "f1-mlops"
       Environment = var.environment
       ManagedBy   = "terraform"
-      Owner       = "theinfinityloop"
+      Owner       = "nshivakumar1"
     }
   }
 }
@@ -133,7 +133,8 @@ module "codepipeline" {
   account_id          = var.account_id
   role_arn            = module.iam.codepipeline_role_arn
   s3_bucket           = module.s3.artifacts_bucket_name
-  github_owner        = var.github_owner
-  github_repo         = var.github_repo
-  github_branch       = var.github_branch
+  github_owner            = var.github_owner
+  github_repo             = var.github_repo
+  github_branch           = var.github_branch
+  codestar_connection_arn = "arn:aws:codeconnections:us-east-1:297997106614:connection/6abde493-3ad0-4a50-8f39-44f542d93bd6"
 }

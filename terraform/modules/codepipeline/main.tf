@@ -1,6 +1,12 @@
+# Only create a new connection if an existing one isn't provided
 resource "aws_codestarconnections_connection" "github" {
+  count         = var.codestar_connection_arn == "" ? 1 : 0
   name          = "${var.project}-github"
   provider_type = "GitHub"
+}
+
+locals {
+  connection_arn = var.codestar_connection_arn != "" ? var.codestar_connection_arn : aws_codestarconnections_connection.github[0].arn
 }
 
 resource "aws_codebuild_project" "f1" {
@@ -58,7 +64,7 @@ resource "aws_codepipeline" "f1" {
       version          = "1"
       output_artifacts = ["source_output"]
       configuration = {
-        ConnectionArn    = aws_codestarconnections_connection.github.arn
+        ConnectionArn    = local.connection_arn
         FullRepositoryId = "${var.github_owner}/${var.github_repo}"
         BranchName       = var.github_branch
       }

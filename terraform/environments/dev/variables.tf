@@ -31,7 +31,7 @@ variable "alert_email" {
 variable "github_owner" {
   description = "GitHub repository owner"
   type        = string
-  default     = "theinfinityloop"
+  default     = "nshivakumar1"
 }
 
 variable "github_repo" {

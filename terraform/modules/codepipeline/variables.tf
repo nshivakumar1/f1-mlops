@@ -10,3 +10,9 @@ variable "github_branch" {
   type    = string
   default = "main"
 }
+
+variable "codestar_connection_arn" {
+  description = "ARN of an existing AVAILABLE CodeStar/CodeConnections GitHub connection"
+  type        = string
+  default     = ""
+}
