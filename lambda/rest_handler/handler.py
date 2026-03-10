@@ -44,7 +44,15 @@ def handle_pitstop_post(body: dict) -> dict:
                          "air_temperature", "track_temperature", "rainfall", "sector_delta"]
         })
 
-    payload = {"instances": [features]}
+    # Apply feature engineering to match training features (11 total)
+    tyre_age, stint_number, gap, air_temp, track_temp, rainfall, sector_delta = features
+    engineered = features + [
+        tyre_age ** 2,                        # tyre_age_sq
+        track_temp * tyre_age / 100.0,        # heat_deg_interaction
+        rainfall * stint_number,              # wet_stint
+        abs(sector_delta),                    # abs_sector_delta
+    ]
+    payload = {"instances": [engineered]}
     response = sagemaker_runtime.invoke_endpoint(
         EndpointName=SAGEMAKER_ENDPOINT,
         ContentType="application/json",
