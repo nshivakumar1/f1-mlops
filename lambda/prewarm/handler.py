@@ -18,7 +18,9 @@ sagemaker_runtime = boto3.client("sagemaker-runtime", region_name=AWS_REGION)
 sagemaker = boto3.client("sagemaker", region_name=AWS_REGION)
 
 
-DUMMY_FEATURES = [5.0, 1.0, 2.5, 28.0, 42.0, 0.0, 0.1]
+# 11 features: tyre_age, stint_number, gap_to_leader, air_temp, track_temp, rainfall, sector_delta,
+#              tyre_age_sq, heat_deg_interaction, wet_stint, abs_sector_delta
+DUMMY_FEATURES = [5.0, 1.0, 2.5, 28.0, 42.0, 0.0, 0.1, 25.0, 2.1, 0.0, 0.1]
 
 
 def lambda_handler(event, context):

@@ -36,7 +36,7 @@ resource "aws_cloudwatch_metric_alarm" "sagemaker_latency" {
   metric_name         = "ModelLatency"
   namespace           = "AWS/SageMaker"
   period              = 60
-  statistic           = "p99"
+  extended_statistic  = "p99"
   threshold           = 3000
   treat_missing_data  = "notBreaching"
   dimensions          = { EndpointName = var.sagemaker_endpoint, VariantName = "dry-race-v1" }
@@ -71,7 +71,7 @@ resource "aws_cloudwatch_metric_alarm" "model_drift" {
   statistic           = "Average"
   threshold           = 0.65
   treat_missing_data  = "notBreaching"
-  alarm_actions       = [aws_sns_topic.f1_alerts.arn, var.stepfunctions_arn]
+  alarm_actions       = [aws_sns_topic.f1_alerts.arn]
 }
 
 # Alarm 5: Billing threshold $10 (CRITICAL)
@@ -96,48 +96,76 @@ resource "aws_cloudwatch_dashboard" "f1" {
   dashboard_body = jsonencode({
     widgets = [
       {
-        type = "metric"
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
         properties = {
           title  = "Lambda Invocations & Errors"
+          region = var.aws_region
           period = 60
           stat   = "Sum"
+          view   = "timeSeries"
           metrics = [
             ["AWS/Lambda", "Invocations", "FunctionName", var.lambda_function],
             ["AWS/Lambda", "Errors", "FunctionName", var.lambda_function]
           ]
+          annotations = { horizontal = [] }
         }
       },
       {
-        type = "metric"
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
         properties = {
           title  = "SageMaker Latency (p99)"
+          region = var.aws_region
           period = 60
           stat   = "p99"
+          view   = "timeSeries"
           metrics = [
             ["AWS/SageMaker", "ModelLatency", "EndpointName", var.sagemaker_endpoint, "VariantName", "dry-race-v1"]
           ]
+          annotations = { horizontal = [] }
         }
       },
       {
-        type = "metric"
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
         properties = {
           title  = "Prediction Confidence (Rolling)"
+          region = var.aws_region
           period = 60
           stat   = "Average"
+          view   = "timeSeries"
           metrics = [
             ["F1MLOps/Models", "PredictionConfidence"]
           ]
+          annotations = { horizontal = [{ value = 0.65, label = "Drift threshold", color = "#ff0000" }] }
         }
       },
       {
-        type = "metric"
+        type   = "metric"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
         properties = {
           title  = "AWS Estimated Charges"
+          region = "us-east-1"
           period = 86400
           stat   = "Maximum"
+          view   = "timeSeries"
           metrics = [
             ["AWS/Billing", "EstimatedCharges", "Currency", "USD"]
           ]
+          annotations = { horizontal = [{ value = 10, label = "$10 cap", color = "#ff0000" }] }
         }
       }
     ]

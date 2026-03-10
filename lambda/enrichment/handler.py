@@ -9,6 +9,8 @@ Lambda Enrichment Function
 import json
 import os
 import time
+import urllib.request
+import urllib.error
 import boto3
 import logging
 from datetime import datetime, timezone
@@ -26,6 +28,7 @@ S3_BUCKET = os.environ["S3_BUCKET"]
 SAGEMAKER_ENDPOINT = os.environ["SAGEMAKER_ENDPOINT"]
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
 AWS_REGION = os.environ.get("AWS_REGION_NAME", "us-east-1")
+LOGSTASH_ENDPOINT = os.environ.get("LOGSTASH_ENDPOINT", "")
 
 s3 = boto3.client("s3", region_name=AWS_REGION)
 sagemaker_runtime = boto3.client("sagemaker-runtime", region_name=AWS_REGION)
@@ -164,6 +167,24 @@ def lambda_handler(event, context):
     )
 
     publish_metrics(predictions)
+
+    # Push to Logstash for real-time Kibana dashboards (fire-and-forget)
+    if LOGSTASH_ENDPOINT and predictions:
+        try:
+            payload = json.dumps({
+                "session_key": session_key,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "predictions": predictions,
+                "safety_car_active": safety_car_active,
+            }).encode()
+            req = urllib.request.Request(
+                LOGSTASH_ENDPOINT,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=3)
+        except Exception as e:
+            logger.warning(f"Logstash push failed (non-critical): {e}")
 
     logger.info(
         f"Processed {len(predictions)} drivers, {len(errors)} errors, "

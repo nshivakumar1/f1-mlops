@@ -6,4 +6,7 @@ variable "lambda_function" { type = string }
 variable "sagemaker_endpoint" { type = string }
 variable "firehose_stream" { type = string }
 variable "stepfunctions_arn" { type = string }
-variable "alert_email" { type = string default = "" }
+variable "alert_email" {
+  type    = string
+  default = ""
+}
