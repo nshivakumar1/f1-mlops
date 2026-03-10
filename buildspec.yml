@@ -1,0 +1,90 @@
+version: 0.2
+
+env:
+  variables:
+    TF_VERSION: "1.14.0"
+    PYTHON_VERSION: "3.12"
+  exported-variables:
+    - TF_PLAN_EXIT_CODE
+
+phases:
+  install:
+    runtime-versions:
+      python: "3.12"
+    commands:
+      - echo "=== Installing dependencies ==="
+      - pip install --upgrade pip
+      - pip install pytest pytest-cov boto3 xgboost lightgbm scikit-learn pandas numpy
+      # Install Terraform
+      - wget -q https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
+      - unzip -q terraform_${TF_VERSION}_linux_amd64.zip
+      - mv terraform /usr/local/bin/
+      - terraform version
+
+  pre_build:
+    commands:
+      - echo "=== Pre-build: lint + unit tests ==="
+      - python -m pytest tests/unit/ -v --tb=short --junitxml=reports/unit-tests.xml || exit 1
+      - echo "Unit tests passed."
+
+  build:
+    commands:
+      - |
+        if [ "$STAGE" = "test" ]; then
+          echo "=== Running full test suite ==="
+          python -m pytest tests/ -v --tb=short --junitxml=reports/tests.xml
+          echo "Tests complete."
+
+        elif [ "$STAGE" = "plan" ]; then
+          echo "=== Terraform Plan ==="
+          cd terraform/environments/dev
+          terraform init -input=false
+          terraform validate
+          terraform plan -input=false -out=tfplan.binary \
+            -var="account_id=${TF_VAR_account_id}" \
+            -var="alert_email=${TF_VAR_alert_email}" \
+            -var="github_owner=${TF_VAR_github_owner}" \
+            -var="github_repo=${TF_VAR_github_repo}"
+          terraform show -json tfplan.binary > tfplan.json
+          export TF_PLAN_EXIT_CODE=$?
+          echo "Terraform plan complete."
+
+        elif [ "$STAGE" = "apply" ]; then
+          echo "=== Terraform Apply ==="
+          cd terraform/environments/dev
+          terraform init -input=false
+          terraform apply -input=false -auto-approve tfplan.binary
+          terraform output -json > /tmp/tf_outputs.json
+          echo "Terraform apply complete."
+          cat /tmp/tf_outputs.json
+
+        else
+          echo "Unknown STAGE: $STAGE"
+          exit 1
+        fi
+
+  post_build:
+    commands:
+      - echo "Build completed at $(date)"
+
+reports:
+  UnitTestReports:
+    files:
+      - "reports/unit-tests.xml"
+    file-format: JUNITXML
+
+artifacts:
+  files:
+    - "terraform/environments/dev/tfplan.binary"
+    - "terraform/environments/dev/tfplan.json"
+    - "reports/**/*"
+  discard-paths: no
+  secondary-artifacts:
+    source:
+      files:
+        - "**/*"
+      discard-paths: no
+
+cache:
+  paths:
+    - "/root/.cache/pip/**/*"

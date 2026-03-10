@@ -1,0 +1,131 @@
+resource "aws_api_gateway_rest_api" "f1" {
+  name        = "${var.project}-api"
+  description = "F1 Race Prediction REST API"
+
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+}
+
+# /predict resource
+resource "aws_api_gateway_resource" "predict" {
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+  parent_id   = aws_api_gateway_rest_api.f1.root_resource_id
+  path_part   = "predict"
+}
+
+# /predict/pitstop — POST
+resource "aws_api_gateway_resource" "pitstop" {
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+  parent_id   = aws_api_gateway_resource.predict.id
+  path_part   = "pitstop"
+}
+
+resource "aws_api_gateway_method" "pitstop_post" {
+  rest_api_id      = aws_api_gateway_rest_api.f1.id
+  resource_id      = aws_api_gateway_resource.pitstop.id
+  http_method      = "POST"
+  authorization    = "NONE"
+  api_key_required = true
+}
+
+resource "aws_api_gateway_integration" "pitstop_post" {
+  rest_api_id             = aws_api_gateway_rest_api.f1.id
+  resource_id             = aws_api_gateway_resource.pitstop.id
+  http_method             = aws_api_gateway_method.pitstop_post.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${var.rest_handler_arn}/invocations"
+}
+
+# /predict/positions/{session_key} — GET
+resource "aws_api_gateway_resource" "positions" {
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+  parent_id   = aws_api_gateway_resource.predict.id
+  path_part   = "positions"
+}
+
+resource "aws_api_gateway_resource" "positions_session" {
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+  parent_id   = aws_api_gateway_resource.positions.id
+  path_part   = "{session_key}"
+}
+
+resource "aws_api_gateway_method" "positions_get" {
+  rest_api_id      = aws_api_gateway_rest_api.f1.id
+  resource_id      = aws_api_gateway_resource.positions_session.id
+  http_method      = "GET"
+  authorization    = "NONE"
+  api_key_required = true
+}
+
+resource "aws_api_gateway_integration" "positions_get" {
+  rest_api_id             = aws_api_gateway_rest_api.f1.id
+  resource_id             = aws_api_gateway_resource.positions_session.id
+  http_method             = aws_api_gateway_method.positions_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${var.rest_handler_arn}/invocations"
+}
+
+# Deployment + stage with 5-min cache
+resource "aws_api_gateway_deployment" "f1" {
+  depends_on = [
+    aws_api_gateway_integration.pitstop_post,
+    aws_api_gateway_integration.positions_get
+  ]
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+}
+
+resource "aws_api_gateway_stage" "v1" {
+  rest_api_id   = aws_api_gateway_rest_api.f1.id
+  deployment_id = aws_api_gateway_deployment.f1.id
+  stage_name    = "v1"
+
+  cache_cluster_enabled = true
+  cache_cluster_size    = "0.5"
+
+  xray_tracing_enabled = true
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_gw.arn
+  }
+}
+
+resource "aws_cloudwatch_log_group" "api_gw" {
+  name              = "/aws/apigateway/${var.project}"
+  retention_in_days = 14
+}
+
+# API Key
+resource "aws_api_gateway_api_key" "f1" {
+  name    = "${var.project}-api-key"
+  enabled = true
+}
+
+resource "aws_api_gateway_usage_plan" "f1" {
+  name = "${var.project}-usage-plan"
+  api_stages {
+    api_id = aws_api_gateway_rest_api.f1.id
+    stage  = aws_api_gateway_stage.v1.stage_name
+  }
+  throttle_settings {
+    rate_limit  = 100
+    burst_limit = 200
+  }
+}
+
+resource "aws_api_gateway_usage_plan_key" "f1" {
+  key_id        = aws_api_gateway_api_key.f1.id
+  key_type      = "API_KEY"
+  usage_plan_id = aws_api_gateway_usage_plan.f1.id
+}
+
+# Lambda permission for API Gateway
+resource "aws_lambda_permission" "api_gw" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = var.rest_handler_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.f1.execution_arn}/*/*"
+}

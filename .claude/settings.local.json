@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install pytest xgboost lightgbm scikit-learn pandas numpy -q)",
+      "Bash(python -m pytest tests/unit/test_openf1_client.py tests/unit/test_pitstop_model.py -v --tb=short)",
+      "Bash(pip3 install pytest xgboost lightgbm scikit-learn pandas numpy -q)",
+      "Bash(python3 -m pytest tests/unit/test_openf1_client.py tests/unit/test_pitstop_model.py -v --tb=short)",
+      "Bash(pip3 install pytest xgboost lightgbm scikit-learn pandas numpy --break-system-packages -q)",
+      "Bash(brew install libomp -q)",
+      "Bash(python3 -m pytest tests/unit/ -v --tb=short)"
+    ]
+  }
+}
