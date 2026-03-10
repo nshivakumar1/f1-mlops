@@ -102,11 +102,11 @@ resource "aws_cloudwatch_dashboard" "f1" {
         width  = 12
         height = 6
         properties = {
-          title   = "Lambda Invocations & Errors"
-          region  = var.aws_region
-          period  = 60
-          stat    = "Sum"
-          view    = "timeSeries"
+          title  = "Lambda Invocations & Errors"
+          region = var.aws_region
+          period = 60
+          stat   = "Sum"
+          view   = "timeSeries"
           metrics = [
             ["AWS/Lambda", "Invocations", "FunctionName", var.lambda_function],
             ["AWS/Lambda", "Errors", "FunctionName", var.lambda_function]
@@ -121,11 +121,11 @@ resource "aws_cloudwatch_dashboard" "f1" {
         width  = 12
         height = 6
         properties = {
-          title   = "SageMaker Latency (p99)"
-          region  = var.aws_region
-          period  = 60
-          stat    = "p99"
-          view    = "timeSeries"
+          title  = "SageMaker Latency (p99)"
+          region = var.aws_region
+          period = 60
+          stat   = "p99"
+          view   = "timeSeries"
           metrics = [
             ["AWS/SageMaker", "ModelLatency", "EndpointName", var.sagemaker_endpoint, "VariantName", "dry-race-v1"]
           ]
@@ -139,11 +139,11 @@ resource "aws_cloudwatch_dashboard" "f1" {
         width  = 12
         height = 6
         properties = {
-          title   = "Prediction Confidence (Rolling)"
-          region  = var.aws_region
-          period  = 60
-          stat    = "Average"
-          view    = "timeSeries"
+          title  = "Prediction Confidence (Rolling)"
+          region = var.aws_region
+          period = 60
+          stat   = "Average"
+          view   = "timeSeries"
           metrics = [
             ["F1MLOps/Models", "PredictionConfidence"]
           ]
@@ -157,11 +157,11 @@ resource "aws_cloudwatch_dashboard" "f1" {
         width  = 12
         height = 6
         properties = {
-          title   = "AWS Estimated Charges"
-          region  = "us-east-1"
-          period  = 86400
-          stat    = "Maximum"
-          view    = "timeSeries"
+          title  = "AWS Estimated Charges"
+          region = "us-east-1"
+          period = 86400
+          stat   = "Maximum"
+          view   = "timeSeries"
           metrics = [
             ["AWS/Billing", "EstimatedCharges", "Currency", "USD"]
           ]

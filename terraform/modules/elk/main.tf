@@ -71,8 +71,8 @@ resource "aws_iam_role_policy" "elk_s3" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["s3:GetObject", "s3:ListBucket", "s3:GetBucketLocation"]
+      Effect = "Allow"
+      Action = ["s3:GetObject", "s3:ListBucket", "s3:GetBucketLocation"]
       Resource = [
         "arn:aws:s3:::${var.s3_bucket}",
         "arn:aws:s3:::${var.s3_bucket}/*"

@@ -3,7 +3,7 @@ resource "aws_cloudwatch_event_rule" "live_poller" {
   name                = "${var.project}-live-poller"
   description         = "Fires enrichment Lambda every 60s during live F1 sessions"
   schedule_expression = "rate(1 minute)"
-  state               = "DISABLED"  # Enabled manually before each session
+  state               = "DISABLED" # Enabled manually before each session
 }
 
 resource "aws_cloudwatch_event_target" "live_poller" {
