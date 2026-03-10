@@ -22,6 +22,7 @@ systemctl enable --now docker
 mkdir -p /opt/elk/logstash/{pipeline,data,config}
 mkdir -p /opt/elk/elasticsearch/data
 chmod -R 777 /opt/elk/elasticsearch /opt/elk/logstash/data
+chown -R 1000:1000 /opt/elk/logstash
 
 # ── 4. docker-compose.yml ─────────────────────────────────────────────────────
 cat > /opt/elk/docker-compose.yml <<'COMPOSE'
@@ -187,8 +188,11 @@ filter {
     remove_field => ["@version"]
   }
 
-  if [approved] == true  { mutate { add_tag => ["model_approved"] } }
-  if [approved] == false { mutate { add_tag => ["model_rejected"]  } }
+  if [approved] {
+    mutate { add_tag => ["model_approved"] }
+  } else {
+    mutate { add_tag => ["model_rejected"] }
+  }
 
   if [deployed_at] {
     date { match => ["deployed_at", "ISO8601"] timezone => "UTC" }

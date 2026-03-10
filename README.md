@@ -23,10 +23,10 @@ OpenF1 API (live telemetry)
  POST /predict/pitstop
  GET  /predict/positions/{session_key}
 
- Kinesis Firehose ──► OpenSearch Dashboards
- (inference-logs)     • F1 Race Predictions
- (training-logs)      • F1 API Health
-                      • F1 Model Drift
+ Lambda ──► Logstash HTTP (real-time) ──► Elasticsearch ──► Kibana
+ S3 logs/inference/ ──► Logstash S3 input (60s poll) ┘
+                       Kibana dashboards:
+                      • F1 Race Predictions  • F1 API Health  • F1 Model Drift
 
  GitHub ──► CodePipeline ──► Terraform apply ──► AWS
 ```
@@ -126,13 +126,13 @@ curl "${API_URL}/predict/positions/11245" -H "x-api-key: ${API_KEY}"
 | SageMaker Serverless | `f1-mlops-pitstop-endpoint` | ~$0.40 |
 | Lambda (4 functions) | `f1-mlops-*` | ~$0.01 |
 | API Gateway | `f1-mlops-api` | ~$0.01 |
-| OpenSearch | `f1-mlops-logs` (t3.small) | ~$0.70 |
+| ELK on EC2 | `f1-mlops-elk` (t3.medium) | ~$1.00 |
 | S3 (3 buckets) | `f1-mlops-data-*` | ~$0.05 |
 | Kinesis Firehose | 2 streams | ~$0.05 |
 | EventBridge + SNS | Included in free tier | $0.00 |
 | **Total** | | **~$1.22** |
 
-> **Cost Control**: Destroy between race weekends with `terraform destroy`. OpenSearch is the main ongoing cost.
+> **Cost Control**: Destroy between race weekends with `terraform destroy`. EC2 ELK is ~$1/day — stop the instance between sessions to save cost.
 
 ## Repository Structure
 
@@ -186,11 +186,11 @@ curl "${API_URL}/predict/positions/11245" -H "x-api-key: ${API_KEY}"
 }
 ```
 
-## OpenSearch Dashboards
+## ELK Stack Dashboards
 
-URL: `https://search-f1-mlops-logs-jrwlfpkfixfmrrorqwgghgerxq.us-east-1.es.amazonaws.com/_dashboards`
+URL: `http://<elk-public-ip>:5601` — get the IP with `terraform output kibana_url`
 
-Credentials stored in AWS Secrets Manager: `f1-mlops/opensearch-admin`
+No auth required (dev mode). EC2 ELK runs Elasticsearch with security disabled for cost savings.
 
 Three dashboards:
 - **F1 Race Predictions** — pitstop probabilities per driver over time
@@ -232,7 +232,7 @@ CodeStar GitHub connection requires one-time manual activation in the AWS Consol
 - [ ] `terraform apply` — verify no drift
 - [ ] Enable EventBridge: `aws events enable-rule --name f1-mlops-live-poller --region us-east-1`
 - [ ] Prewarm endpoint 5 min before session
-- [ ] Monitor: OpenSearch Dashboards + `#f1-race-alerts` Slack channel
+- [ ] Monitor: Kibana (`http://3.221.47.245:5601`) + `#f1-race-alerts` Slack channel
 - [ ] After race: `aws events disable-rule --name f1-mlops-live-poller --region us-east-1`
 - [ ] `terraform destroy` (if next race > 1 week away)
 
@@ -249,5 +249,13 @@ All sensitive values are in AWS Secrets Manager. Terraform manages all IAM roles
 
 | Secret | Description |
 |--------|-------------|
-| `f1-mlops/opensearch-admin` | OpenSearch dashboard credentials |
 | `f1-mlops/slack-bot-token` | Slack Bot Token for direct posting |
+
+## Live Endpoints
+
+| Service | URL | Notes |
+| ------- | --- | ----- |
+| REST API | `https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1` | Requires `x-api-key` header |
+| Kibana | `http://3.221.47.245:5601` | No auth (dev mode) |
+| Logstash HTTP | `http://3.221.47.245:8080` | Lambda pushes here |
+| API Key | `zhMEZa785U7PuWJ4o2BIp9lEgUb00t0W25NyiFSx` | Store securely |
