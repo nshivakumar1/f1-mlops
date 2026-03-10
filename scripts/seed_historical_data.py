@@ -30,10 +30,9 @@ def openf1_get(endpoint: str, params: dict) -> list:
 
 def fetch_sessions(year: int) -> list:
     """Get all race/qualifying sessions for a given year."""
-    sessions = openf1_get("sessions", {"year": year, "session_type": "Race"})
-    sessions += openf1_get("sessions", {"year": year, "session_type": "Qualifying"})
-    sessions += openf1_get("sessions", {"year": year, "session_type": "Sprint"})
-    print(f"Found {len(sessions)} sessions for {year}")
+    all_sessions = openf1_get("sessions", {"year": year})
+    sessions = [s for s in all_sessions if s.get("session_type") in ("Race", "Qualifying", "Sprint")]
+    print(f"Found {len(sessions)} race/qualifying/sprint sessions for {year} (of {len(all_sessions)} total)")
     return sessions
 
 
