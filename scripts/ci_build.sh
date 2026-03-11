@@ -27,6 +27,11 @@ case "$STAGE" in
 
   apply)
     echo "Running Terraform apply..."
+    # Copy plan binary from secondary artifact (plan_output) if present
+    PLAN_SRC="${CODEBUILD_SRC_DIR_plan_output:-}"
+    if [ -n "$PLAN_SRC" ] && [ -f "${PLAN_SRC}/terraform/environments/dev/tfplan.binary" ]; then
+      cp "${PLAN_SRC}/terraform/environments/dev/tfplan.binary" terraform/environments/dev/tfplan.binary
+    fi
     cd terraform/environments/dev
     terraform init -input=false
     terraform apply -input=false -auto-approve tfplan.binary

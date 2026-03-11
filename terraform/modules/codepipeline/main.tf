@@ -132,9 +132,10 @@ resource "aws_codepipeline" "f1" {
       owner           = "AWS"
       provider        = "CodeBuild"
       version         = "1"
-      input_artifacts = ["plan_output"]
+      input_artifacts = ["source_output", "plan_output"]
       configuration = {
-        ProjectName = aws_codebuild_project.f1.name
+        ProjectName   = aws_codebuild_project.f1.name
+        PrimarySource = "source_output"
         EnvironmentVariables = jsonencode([
           { name = "STAGE", value = "apply", type = "PLAINTEXT" }
         ])
