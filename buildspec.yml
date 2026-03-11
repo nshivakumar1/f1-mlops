@@ -39,6 +39,10 @@ artifacts:
   files:
     - "terraform/environments/dev/tfplan.binary"
     - "terraform/environments/dev/tfplan.json"
+    - "terraform/modules/lambda/enrichment.zip"
+    - "terraform/modules/lambda/rest_handler.zip"
+    - "terraform/modules/lambda/prewarm.zip"
+    - "terraform/modules/lambda/slack_notifier.zip"
     - "reports/**/*"
   discard-paths: no
   secondary-artifacts:

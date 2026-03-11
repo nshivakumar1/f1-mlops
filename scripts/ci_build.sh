@@ -27,10 +27,15 @@ case "$STAGE" in
 
   apply)
     echo "Running Terraform apply..."
-    # Copy plan binary from secondary artifact (plan_output) if present
+    # Copy plan binary and Lambda ZIPs from plan_output artifact if present
     PLAN_SRC="${CODEBUILD_SRC_DIR_plan_output:-}"
     if [ -n "$PLAN_SRC" ] && [ -f "${PLAN_SRC}/terraform/environments/dev/tfplan.binary" ]; then
       cp "${PLAN_SRC}/terraform/environments/dev/tfplan.binary" terraform/environments/dev/tfplan.binary
+      for func in enrichment rest_handler prewarm slack_notifier; do
+        if [ -f "${PLAN_SRC}/terraform/modules/lambda/${func}.zip" ]; then
+          cp "${PLAN_SRC}/terraform/modules/lambda/${func}.zip" terraform/modules/lambda/${func}.zip
+        fi
+      done
     fi
     cd terraform/environments/dev
     terraform init -input=false
