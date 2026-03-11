@@ -13,9 +13,8 @@ phases:
     commands:
       - pip install --upgrade pip
       - pip install pytest pytest-cov boto3 xgboost scikit-learn pandas numpy
-      - wget -q https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
-      - unzip -q terraform_${TF_VERSION}_linux_amd64.zip
-      - mv terraform /usr/local/bin/
+      - curl -fsSL -o /tmp/terraform.zip https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip
+      - unzip -q /tmp/terraform.zip -d /usr/local/bin/
       - terraform version
 
   pre_build:
