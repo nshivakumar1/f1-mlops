@@ -115,6 +115,62 @@ def handle_positions_get(session_key: str) -> dict:
         return _response(500, {"error": "Internal server error"})
 
 
+def handle_sessions_list() -> dict:
+    """GET /sessions — lists all available sessions from S3."""
+    try:
+        result = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix="logs/inference/", Delimiter="/")
+        prefixes = result.get("CommonPrefixes", [])
+        sessions = []
+        for p in prefixes:
+            parts = p["Prefix"].rstrip("/").split("_")
+            if len(parts) >= 2:
+                sessions.append(parts[-1])
+        return _response(200, {"sessions": sorted(sessions, reverse=True)})
+    except Exception as e:
+        logger.error(f"Error listing sessions: {e}")
+        return _response(500, {"error": "Internal server error"})
+
+
+def handle_latest_session() -> dict:
+    """GET /sessions/latest — returns most recent session predictions."""
+    try:
+        result = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix="logs/inference/")
+        objects = result.get("Contents", [])
+        if not objects:
+            return _response(404, {"error": "No predictions found yet"})
+        latest = sorted(objects, key=lambda x: x["LastModified"], reverse=True)[0]
+        parts = latest["Key"].split("/")
+        session_part = next((p for p in parts if p.startswith("session_")), None)
+        session_key = session_part.replace("session_", "") if session_part else "unknown"
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=latest["Key"])
+        data = json.loads(obj["Body"].read().decode())
+        return _response(200, {
+            "session_key": session_key,
+            "prediction_time": data.get("timestamp"),
+            "safety_car_active": data.get("safety_car_active", False),
+            "processing_time_ms": data.get("processing_time_ms"),
+            "predictions": [
+                {
+                    "driver_number": p["driver_number"],
+                    "driver_name": p["driver_name"],
+                    "team": p["team"],
+                    "tyre_compound": p.get("tyre_compound"),
+                    "tyre_age": p["features"][0],
+                    "pitstop_probability": p["prediction"].get("pitstop_probability", 0),
+                    "confidence": p["prediction"].get("confidence", 0),
+                }
+                for p in sorted(
+                    data.get("predictions", []),
+                    key=lambda x: x["prediction"].get("pitstop_probability", 0),
+                    reverse=True,
+                )
+            ],
+        })
+    except Exception as e:
+        logger.error(f"Error fetching latest session: {e}")
+        return _response(500, {"error": "Internal server error"})
+
+
 def lambda_handler(event, context):
     method = event.get("httpMethod", "")
     path = event.get("path", "")
@@ -128,6 +184,12 @@ def lambda_handler(event, context):
         except json.JSONDecodeError:
             return _response(400, {"error": "Invalid JSON body"})
         return handle_pitstop_post(body)
+
+    elif method == "GET" and path.rstrip("/").endswith("/sessions/latest"):
+        return handle_latest_session()
+
+    elif method == "GET" and path.rstrip("/").endswith("/sessions"):
+        return handle_sessions_list()
 
     elif method == "GET" and "/predict/positions/" in path:
         session_key = path_params.get("session_key") or path.split("/")[-1]
