@@ -61,16 +61,16 @@ export default function LivePage() {
       setData(result);
       setError(null);
       setLastUpdated(new Date());
-      setCountdown(REFRESH_INTERVAL / 1000);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setLoading(false);
+      setCountdown(REFRESH_INTERVAL / 1000);
     }
   }, []);
 
   useEffect(() => { refresh(); const i = setInterval(refresh, REFRESH_INTERVAL); return () => clearInterval(i); }, [refresh]);
-  useEffect(() => { const t = setInterval(() => setCountdown((c) => Math.max(0, c - 1)), 1000); return () => clearInterval(t); }, [lastUpdated]);
+  useEffect(() => { const t = setInterval(() => setCountdown((c) => Math.max(0, c - 1)), 1000); return () => clearInterval(t); }, []);
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
