@@ -34,7 +34,7 @@ services:
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=false
-      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - ES_JAVA_OPTS=-Xms2g -Xmx2g
       - cluster.routing.allocation.disk.watermark.low=90%
       - cluster.routing.allocation.disk.watermark.high=95%
     volumes:
@@ -77,7 +77,7 @@ services:
         /usr/local/bin/docker-entrypoint
       "
     environment:
-      - LS_JAVA_OPTS=-Xms512m -Xmx512m
+      - LS_JAVA_OPTS=-Xms1g -Xmx1g
       - AWS_DEFAULT_REGION=${aws_region}
       - PIPELINE_WORKERS=4
     volumes:
