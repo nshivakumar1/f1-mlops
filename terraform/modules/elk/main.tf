@@ -128,9 +128,17 @@ resource "aws_iam_instance_profile" "elk" {
 
 # ── EC2 instance ───────────────────────────────────────────────────────────────
 
+# SSH key pair — public key from developer's local ~/.ssh/id_rsa.pub
+# Use EC2 Instance Connect as fallback: aws ec2-instance-connect send-ssh-public-key ...
+resource "aws_key_pair" "elk" {
+  key_name   = "${var.project}-elk-key"
+  public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDE2Fc4w7XpMogqNzEQDWxX+yAn4XcpxDt18SLkuE8FCKEjPXuWDI/WiUJkFZWw5NeWu29o7App/CwvwPAO5c0VvzXRib3aE4HCGRSzZ6XmFuVOM3Ae1OZ2QaritySd14m9hqSFpjdwaMktS/GyeneN2sITzMUqVhVNSNUKVY1SlmB86fvjzbLOIrbO8E8lhcygTSVRljwaa+xoqmIR/0zUBhFo4343nzEfYTqF8WSNxS/YGYOTc87YDZHIhKGaSNcsDmx2DxAwPao201bhhpHnI2sME8oi/Hv2Sm2ThHM49+48TnNs1omoqmWgenqtvGWAu1SNS+66wV/UMv/bUdB5NEh4xn1Mo8xsCnwH67IGC9gSZm+cJKGfTTrezV8m48J8DAzctPllBvBgShkS3fKogtKvhKWLA6I1m+m1Mt6fDVbzsMg1qNAqGu68aeDpLnHaO5zLK8QWtrzDVuT9KPwvlQkprhKztMQyk4zEL7tGpCgRppezUaD0W1hp6uxDovt2p0vl9PlNasG0yjnKRfKQBQ0ZC1xgtIYPIfMJJBn2ndS7LSj8ptHQaRbLULrk4r3+BU2G3twLnsBqvxtyBagTJYFDhHGAbwZbciaBSEg7jYuZI95Ik/CiFCi5PyldETR/338eueHBdcMoLKl7n5eIIu+S1pW9jkvKUZySibHrdw== nakulshivakumar@Nakuls-MacBook-Air.local"
+}
+
 resource "aws_instance" "elk" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = "t3.medium"
+  key_name               = aws_key_pair.elk.key_name
   iam_instance_profile   = aws_iam_instance_profile.elk.name
   vpc_security_group_ids = [aws_security_group.elk.id]
 

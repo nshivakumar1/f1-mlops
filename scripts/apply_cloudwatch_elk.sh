@@ -34,7 +34,10 @@ echo "EC2 instance ID: $RUNNING_INSTANCE_ID"
 
 # ── 2. Install Logstash CloudWatch plugins ────────────────────────────────────
 echo "Installing Logstash plugins..."
-$SSH "docker exec elk-logstash-1 bash -c '
+# Find the Logstash container name (may vary)
+LOGSTASH_CONTAINER=$($SSH "sudo docker ps --filter 'ancestor=docker.elastic.co/logstash/logstash:8.12.2' --format '{{.Names}}' | head -1")
+echo "Logstash container: $LOGSTASH_CONTAINER"
+$SSH "sudo docker exec $LOGSTASH_CONTAINER bash -c '
   bin/logstash-plugin list | grep -q logstash-input-cloudwatch_logs || \
     bin/logstash-plugin install logstash-input-cloudwatch_logs
   bin/logstash-plugin list | grep -q logstash-input-cloudwatch || \
@@ -175,15 +178,15 @@ done
 
 # ── 7. Start Metricbeat (if not running) ──────────────────────────────────────
 echo "Checking Metricbeat..."
-$SSH "cd /opt/elk && docker compose ps metricbeat 2>/dev/null || echo 'Metricbeat not in compose — skip'"
+$SSH "cd /opt/elk && sudo docker compose ps metricbeat 2>/dev/null || echo 'Metricbeat not in compose — skip'"
 
 # ── 8. Restart Logstash to pick up new pipelines ─────────────────────────────
 echo "Restarting Logstash..."
-$SSH "cd /opt/elk && docker compose restart logstash"
+$SSH "cd /opt/elk && sudo docker compose restart logstash"
 echo "Waiting for Logstash to come back up (~30s)..."
 sleep 30
 
-$SSH "docker logs elk-logstash-1 2>&1 | tail -20"
+$SSH "sudo docker logs $LOGSTASH_CONTAINER 2>&1 | tail -20"
 
 echo ""
 echo "=== Done! ==="
