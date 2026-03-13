@@ -147,9 +147,13 @@ def get_race_control(session_key: str) -> list:
 
 
 def get_latest_session() -> dict:
-    """Returns the most recent session from OpenF1."""
-    sessions = _get("sessions", {"year": 2026})
-    return sessions[-1] if sessions else {}
+    """Returns the most recent session that has already started."""
+    import datetime
+    now = datetime.datetime.utcnow()
+    sessions = _get("sessions", {"year": now.year})
+    now_iso = now.strftime("%Y-%m-%dT%H:%M")
+    started = [s for s in sessions if s.get("date_start", "") <= now_iso]
+    return started[-1] if started else (sessions[-1] if sessions else {})
 
 
 def fetch_all_session_data(session_key: str) -> dict:
