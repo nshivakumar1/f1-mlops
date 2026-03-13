@@ -10,7 +10,9 @@ import logging
 import time
 import urllib.request
 import urllib.parse
+import urllib.error
 import boto3
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -22,7 +24,8 @@ _AWS_REGION = "us-east-1"
 
 # Module-level caches — survive warm Lambda invocations
 _token_cache: dict = {"access_token": None, "expires_at": 0.0}
-_weather_cache: dict = {}  # session_key → weather dict
+_weather_cache: dict = {}        # session_key → {"data": ..., "fetched_at": float}
+_WEATHER_TTL = 300               # refresh weather every 5 min (catches mid-race rain)
 
 
 def _get_auth_token(force_refresh: bool = False) -> str:
@@ -52,6 +55,7 @@ def _get_auth_token(force_refresh: bool = False) -> str:
     # Refresh 60s before actual expiry to avoid mid-invocation expiry
     _token_cache["expires_at"] = now + int(token_data.get("expires_in", 3600)) - 60
     return _token_cache["access_token"]
+
 
 # 2026 full driver grid: driver_number → metadata
 DRIVER_GRID = {
@@ -83,7 +87,12 @@ ALL_DRIVER_NUMBERS = list(DRIVER_GRID.keys())
 
 
 def _get(endpoint: str, params: dict, _retry: bool = True) -> list:
-    """Make authenticated GET request to OpenF1 API, return parsed JSON list."""
+    """
+    Authenticated GET → OpenF1 API. Returns parsed JSON list.
+    - 401: force-refreshes token and retries once
+    - 404: returns [] (OpenF1 returns 404 for empty result sets)
+    - 5xx: retries once after 2s backoff
+    """
     qs = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
     url = f"{BASE_URL}/{endpoint}?{qs}"
     token = _get_auth_token()
@@ -96,24 +105,39 @@ def _get(endpoint: str, params: dict, _retry: bool = True) -> list:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         if e.code == 401 and _retry:
-            # Token may have expired mid-session — force refresh and retry once
             _get_auth_token(force_refresh=True)
             return _get(endpoint, params, _retry=False)
         if e.code == 404:
-            # OpenF1 returns 404 {"detail":"No results found."} for empty queries
+            # OpenF1 returns 404 for empty result sets — not a real error
             return []
+        if e.code >= 500 and _retry:
+            # Transient server error — wait and retry once
+            logger.warning(f"OpenF1 {e.code} on {endpoint}, retrying in 2s")
+            time.sleep(2)
+            return _get(endpoint, params, _retry=False)
         body = e.read().decode(errors="replace")[:300]
         logger.error(f"HTTPError {e.code} GET {url} — body: {body}")
+        raise
+    except Exception as e:
+        if _retry:
+            logger.warning(f"OpenF1 request error on {endpoint}: {e}, retrying in 2s")
+            time.sleep(2)
+            return _get(endpoint, params, _retry=False)
         raise
 
 
 def get_weather(session_key: str) -> dict:
-    """Track temp, air temp, rainfall, wind. Latest reading. Cached per session."""
-    if session_key in _weather_cache:
-        return _weather_cache[session_key]
+    """
+    Track temp, air temp, rainfall, wind. Latest reading.
+    Cached per session with 5-minute TTL to catch mid-race rain.
+    """
+    now = time.time()
+    cached = _weather_cache.get(session_key)
+    if cached and now - cached["fetched_at"] < _WEATHER_TTL:
+        return cached["data"]
     records = _get("weather", {"session_key": session_key})
     result = records[-1] if records else {}
-    _weather_cache[session_key] = result
+    _weather_cache[session_key] = {"data": result, "fetched_at": now}
     return result
 
 
@@ -130,13 +154,35 @@ def get_latest_session() -> dict:
 
 def fetch_all_session_data(session_key: str) -> dict:
     """
-    Batch-fetch stints, intervals, and laps for ALL drivers in 3 API calls.
+    Parallel-fetch stints, intervals, laps, weather, and race_control
+    for ALL drivers in a single round-trip (5 concurrent calls).
+
+    Previously sequential (3 calls × ~700ms = ~2.1s).
+    Now concurrent: all 5 calls complete in ~max(individual latencies) ≈ 700ms.
+
     Returns dicts keyed by driver_number for O(1) per-driver lookup.
-    Reduces API calls from 22×3=66 down to 3, staying within 60 req/min limit.
     """
-    stints_all = _get("stints", {"session_key": session_key})
-    intervals_all = _get("intervals", {"session_key": session_key})
-    laps_all = _get("laps", {"session_key": session_key})
+    tasks = {
+        "stints":        ("stints",        {"session_key": session_key}),
+        "intervals":     ("intervals",     {"session_key": session_key}),
+        "laps":          ("laps",          {"session_key": session_key}),
+        "weather":       ("weather",       {"session_key": session_key}),
+        "race_control":  ("race_control",  {"session_key": session_key}),
+    }
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {
+            pool.submit(_get, endpoint, params): key
+            for key, (endpoint, params) in tasks.items()
+        }
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                results[key] = future.result()
+            except Exception as e:
+                logger.error(f"fetch_all_session_data: {key} failed: {e}")
+                results[key] = []
 
     def _group(records: list) -> dict:
         out: dict = {}
@@ -146,11 +192,17 @@ def fetch_all_session_data(session_key: str) -> dict:
                 out.setdefault(dn, []).append(r)
         return out
 
+    # Update weather cache with fresh data
+    weather_records = results.get("weather", [])
+    weather = weather_records[-1] if weather_records else {}
+    _weather_cache[session_key] = {"data": weather, "fetched_at": time.time()}
+
     return {
-        "stints": _group(stints_all),
-        "intervals": _group(intervals_all),
-        "laps": _group(laps_all),
-        "weather": get_weather(session_key),
+        "stints":       _group(results.get("stints", [])),
+        "intervals":    _group(results.get("intervals", [])),
+        "laps":         _group(results.get("laps", [])),
+        "weather":      weather,
+        "race_control": results.get("race_control", []),
     }
 
 
