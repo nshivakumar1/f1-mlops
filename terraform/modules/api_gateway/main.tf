@@ -68,11 +68,61 @@ resource "aws_api_gateway_integration" "positions_get" {
   uri                     = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${var.rest_handler_arn}/invocations"
 }
 
+# /sessions — GET (public, no API key)
+resource "aws_api_gateway_resource" "sessions" {
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+  parent_id   = aws_api_gateway_rest_api.f1.root_resource_id
+  path_part   = "sessions"
+}
+
+resource "aws_api_gateway_method" "sessions_get" {
+  rest_api_id      = aws_api_gateway_rest_api.f1.id
+  resource_id      = aws_api_gateway_resource.sessions.id
+  http_method      = "GET"
+  authorization    = "NONE"
+  api_key_required = false
+}
+
+resource "aws_api_gateway_integration" "sessions_get" {
+  rest_api_id             = aws_api_gateway_rest_api.f1.id
+  resource_id             = aws_api_gateway_resource.sessions.id
+  http_method             = aws_api_gateway_method.sessions_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${var.rest_handler_arn}/invocations"
+}
+
+# /sessions/latest — GET (public, no API key)
+resource "aws_api_gateway_resource" "sessions_latest" {
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+  parent_id   = aws_api_gateway_resource.sessions.id
+  path_part   = "latest"
+}
+
+resource "aws_api_gateway_method" "sessions_latest_get" {
+  rest_api_id      = aws_api_gateway_rest_api.f1.id
+  resource_id      = aws_api_gateway_resource.sessions_latest.id
+  http_method      = "GET"
+  authorization    = "NONE"
+  api_key_required = false
+}
+
+resource "aws_api_gateway_integration" "sessions_latest_get" {
+  rest_api_id             = aws_api_gateway_rest_api.f1.id
+  resource_id             = aws_api_gateway_resource.sessions_latest.id
+  http_method             = aws_api_gateway_method.sessions_latest_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${var.rest_handler_arn}/invocations"
+}
+
 # Deployment + stage with 5-min cache
 resource "aws_api_gateway_deployment" "f1" {
   depends_on = [
     aws_api_gateway_integration.pitstop_post,
-    aws_api_gateway_integration.positions_get
+    aws_api_gateway_integration.positions_get,
+    aws_api_gateway_integration.sessions_get,
+    aws_api_gateway_integration.sessions_latest_get,
   ]
   rest_api_id = aws_api_gateway_rest_api.f1.id
 }

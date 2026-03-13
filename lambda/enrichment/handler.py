@@ -16,6 +16,7 @@ import logging
 from datetime import datetime, timezone
 from openf1_client import (
     build_feature_vector,
+    fetch_all_session_data,
     get_latest_session,
     get_race_control,
     ALL_DRIVER_NUMBERS,
@@ -110,12 +111,21 @@ def lambda_handler(event, context):
     logger.info(f"Processing session_key={session_key}")
 
     safety_car_active = check_safety_car(session_key)
+
+    # Batch-fetch all session data in 3 API calls instead of 66
+    try:
+        session_data = fetch_all_session_data(session_key)
+    except Exception as e:
+        logger.error(f"Failed to fetch session data: {e}")
+        session_data = {"stints": {}, "intervals": {}, "laps": {}, "weather": {}}
+    session_data["session_key"] = session_key
+
     predictions = []
     errors = []
 
     for driver_number in ALL_DRIVER_NUMBERS:
         try:
-            feature_data = build_feature_vector(session_key, driver_number)
+            feature_data = build_feature_vector(driver_number, session_data)
             if not feature_data:
                 continue
 

@@ -1,14 +1,57 @@
 """
 OpenF1 API client — wraps all 20 live metrics endpoints.
-Free, no authentication required.
+Uses OAuth2 bearer token auth during live sessions.
 Base URL: https://api.openf1.org/v1
+Credentials stored in Secrets Manager: f1-mlops/openf1-credentials
+  {"username": "email@example.com", "password": "yourpassword"}
 """
 import json
+import logging
+import time
 import urllib.request
 import urllib.parse
+import boto3
 from typing import Optional
 
+logger = logging.getLogger(__name__)
+
 BASE_URL = "https://api.openf1.org/v1"
+_TOKEN_URL = "https://api.openf1.org/token"
+_SECRET_NAME = "f1-mlops/openf1-credentials"
+_AWS_REGION = "us-east-1"
+
+# Module-level caches — survive warm Lambda invocations
+_token_cache: dict = {"access_token": None, "expires_at": 0.0}
+_weather_cache: dict = {}  # session_key → weather dict
+
+
+def _get_auth_token(force_refresh: bool = False) -> str:
+    """Return a valid OAuth2 bearer token, refreshing if needed."""
+    now = time.time()
+    if not force_refresh and _token_cache["access_token"] and now < _token_cache["expires_at"]:
+        return _token_cache["access_token"]
+
+    sm = boto3.client("secretsmanager", region_name=_AWS_REGION)
+    secret = json.loads(sm.get_secret_value(SecretId=_SECRET_NAME)["SecretString"])
+
+    body = urllib.parse.urlencode({
+        "grant_type": "password",
+        "username": secret["username"],
+        "password": secret["password"],
+    }).encode()
+    req = urllib.request.Request(
+        _TOKEN_URL,
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        token_data = json.loads(resp.read().decode())
+
+    _token_cache["access_token"] = token_data["access_token"]
+    # Refresh 60s before actual expiry to avoid mid-invocation expiry
+    _token_cache["expires_at"] = now + int(token_data.get("expires_in", 3600)) - 60
+    return _token_cache["access_token"]
 
 # 2026 full driver grid: driver_number → metadata
 DRIVER_GRID = {
@@ -39,60 +82,39 @@ DRIVER_GRID = {
 ALL_DRIVER_NUMBERS = list(DRIVER_GRID.keys())
 
 
-def _get(endpoint: str, params: dict) -> list:
-    """Make GET request to OpenF1 API, return parsed JSON list."""
+def _get(endpoint: str, params: dict, _retry: bool = True) -> list:
+    """Make authenticated GET request to OpenF1 API, return parsed JSON list."""
     qs = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
     url = f"{BASE_URL}/{endpoint}?{qs}"
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read().decode())
-
-
-def get_car_data(session_key: str, driver_number: int, limit: int = 5) -> list:
-    """Speed, throttle, brake, RPM, gear, DRS at 3.7 Hz."""
-    return _get("car_data", {
-        "session_key": session_key,
-        "driver_number": driver_number,
-    })[-limit:]
-
-
-def get_intervals(session_key: str, driver_number: int) -> list:
-    """Gap to leader and interval ahead, per lap."""
-    return _get("intervals", {
-        "session_key": session_key,
-        "driver_number": driver_number,
+    token = _get_auth_token()
+    req = urllib.request.Request(url, headers={
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
     })
-
-
-def get_stints(session_key: str, driver_number: int) -> list:
-    """Tyre compound, age, stint number."""
-    return _get("stints", {
-        "session_key": session_key,
-        "driver_number": driver_number,
-    })
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        if e.code == 401 and _retry:
+            # Token may have expired mid-session — force refresh and retry once
+            _get_auth_token(force_refresh=True)
+            return _get(endpoint, params, _retry=False)
+        if e.code == 404:
+            # OpenF1 returns 404 {"detail":"No results found."} for empty queries
+            return []
+        body = e.read().decode(errors="replace")[:300]
+        logger.error(f"HTTPError {e.code} GET {url} — body: {body}")
+        raise
 
 
 def get_weather(session_key: str) -> dict:
-    """Track temp, air temp, rainfall, wind. Latest reading."""
+    """Track temp, air temp, rainfall, wind. Latest reading. Cached per session."""
+    if session_key in _weather_cache:
+        return _weather_cache[session_key]
     records = _get("weather", {"session_key": session_key})
-    return records[-1] if records else {}
-
-
-def get_laps(session_key: str, driver_number: int, last_n: int = 5) -> list:
-    """Lap duration, sector times. Last N laps."""
-    return _get("laps", {
-        "session_key": session_key,
-        "driver_number": driver_number,
-    })[-last_n:]
-
-
-def get_position(session_key: str, driver_number: int) -> dict:
-    """Current race position."""
-    records = _get("position", {
-        "session_key": session_key,
-        "driver_number": driver_number,
-    })
-    return records[-1] if records else {}
+    result = records[-1] if records else {}
+    _weather_cache[session_key] = result
+    return result
 
 
 def get_race_control(session_key: str) -> list:
@@ -106,25 +128,56 @@ def get_latest_session() -> dict:
     return sessions[-1] if sessions else {}
 
 
-def build_feature_vector(session_key: str, driver_number: int) -> Optional[dict]:
+def fetch_all_session_data(session_key: str) -> dict:
     """
-    Builds the 7-feature vector for the SageMaker pitstop prediction endpoint.
+    Batch-fetch stints, intervals, and laps for ALL drivers in 3 API calls.
+    Returns dicts keyed by driver_number for O(1) per-driver lookup.
+    Reduces API calls from 22×3=66 down to 3, staying within 60 req/min limit.
+    """
+    stints_all = _get("stints", {"session_key": session_key})
+    intervals_all = _get("intervals", {"session_key": session_key})
+    laps_all = _get("laps", {"session_key": session_key})
+
+    def _group(records: list) -> dict:
+        out: dict = {}
+        for r in records:
+            dn = r.get("driver_number")
+            if dn is not None:
+                out.setdefault(dn, []).append(r)
+        return out
+
+    return {
+        "stints": _group(stints_all),
+        "intervals": _group(intervals_all),
+        "laps": _group(laps_all),
+        "weather": get_weather(session_key),
+    }
+
+
+def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dict]:
+    """
+    Build the 11-feature vector from pre-fetched session data.
 
     Features (in order):
-      [0] tyre_age       — laps on current stint
-      [1] stint_number   — current stint number
-      [2] gap_to_leader  — seconds behind leader
-      [3] air_temperature — °C
-      [4] track_temperature — °C
-      [5] rainfall       — 1 if raining, 0 if dry
-      [6] sector_delta   — current sector time vs driver avg of last 3 laps
+      [0]  tyre_age              — laps on current stint
+      [1]  stint_number          — current stint number
+      [2]  gap_to_leader         — seconds behind leader
+      [3]  air_temperature       — °C
+      [4]  track_temperature     — °C
+      [5]  rainfall              — 1 if raining, 0 if dry
+      [6]  sector_delta          — recent sector 1 vs 3-lap avg
+      [7]  tyre_age_sq           — tyre_age²
+      [8]  heat_deg_interaction  — track_temp × tyre_age
+      [9]  wet_stint             — rainfall × stint_number
+      [10] abs_sector_delta      — |sector_delta|
     """
     try:
-        stints = get_stints(session_key, driver_number)
-        intervals = get_intervals(session_key, driver_number)
-        weather = get_weather(session_key)
-        laps = get_laps(session_key, driver_number, last_n=4)
+        stints = session_data["stints"].get(driver_number, [])
+        intervals = session_data["intervals"].get(driver_number, [])
+        laps = session_data["laps"].get(driver_number, [])[-4:]
+        weather = session_data["weather"]
     except Exception as e:
+        logger.warning(f"build_feature_vector driver={driver_number}: {type(e).__name__}: {e}")
         return None
 
     # Feature 0 & 1: tyre_age and stint_number
@@ -166,13 +219,19 @@ def build_feature_vector(session_key: str, driver_number: int) -> Optional[dict]
         except (TypeError, ValueError):
             sector_delta = 0.0
 
+    # Derived features (required by model — must match training)
+    tyre_age_sq = tyre_age ** 2
+    heat_deg_interaction = track_temperature * tyre_age
+    wet_stint = rainfall * stint_number
+    abs_sector_delta = abs(sector_delta)
+
     driver_info = DRIVER_GRID.get(driver_number, {})
 
     return {
         "driver_number": driver_number,
         "driver_name": driver_info.get("name", f"Driver #{driver_number}"),
         "team": driver_info.get("team", "Unknown"),
-        "session_key": session_key,
+        "session_key": session_data.get("session_key", "unknown"),
         "tyre_compound": current_stint.get("compound", "UNKNOWN"),
         "features": [
             tyre_age,
@@ -182,6 +241,10 @@ def build_feature_vector(session_key: str, driver_number: int) -> Optional[dict]
             track_temperature,
             rainfall,
             sector_delta,
+            tyre_age_sq,
+            heat_deg_interaction,
+            wet_stint,
+            abs_sector_delta,
         ],
         "feature_names": [
             "tyre_age",
@@ -191,5 +254,9 @@ def build_feature_vector(session_key: str, driver_number: int) -> Optional[dict]
             "track_temperature",
             "rainfall",
             "sector_delta",
+            "tyre_age_sq",
+            "heat_deg_interaction",
+            "wet_stint",
+            "abs_sector_delta",
         ],
     }
