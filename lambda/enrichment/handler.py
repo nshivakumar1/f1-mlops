@@ -161,12 +161,19 @@ def lambda_handler(event, context):
     start_time = time.time()
 
     # ── 1. Resolve session key ───────────────────────────────────────────────
-    try:
-        session = get_latest_session()
-        session_key = str(session.get("session_key") or event.get("session_key", "latest"))
-    except Exception as e:
-        logger.error(f"Failed to get session: {e}")
-        session_key = str(event.get("session_key", "latest"))
+    # Priority: env var override > event param > OpenF1 latest session
+    env_session = os.environ.get("SESSION_KEY", "")
+    if env_session:
+        session_key = env_session
+    elif event.get("session_key"):
+        session_key = str(event["session_key"])
+    else:
+        try:
+            session = get_latest_session()
+            session_key = str(session.get("session_key", "latest"))
+        except Exception as e:
+            logger.error(f"Failed to get session: {e}")
+            session_key = "latest"
 
     logger.info(f"Processing session_key={session_key}")
 
