@@ -56,7 +56,7 @@ resource "aws_api_gateway_method" "positions_get" {
   resource_id      = aws_api_gateway_resource.positions_session.id
   http_method      = "GET"
   authorization    = "NONE"
-  api_key_required = true
+  api_key_required = false
 }
 
 resource "aws_api_gateway_integration" "positions_get" {

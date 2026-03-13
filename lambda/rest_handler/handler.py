@@ -123,7 +123,7 @@ def handle_sessions_list() -> dict:
         sessions = []
         for p in prefixes:
             parts = p["Prefix"].rstrip("/").split("_")
-            if len(parts) >= 2:
+            if len(parts) >= 2 and parts[-1].isdigit():
                 sessions.append(parts[-1])
         return _response(200, {"sessions": sorted(sessions, reverse=True)})
     except Exception as e:
