@@ -84,6 +84,50 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - GitHub Actions enforces `terraform fmt -check -recursive terraform/`
 - Always run `terraform fmt -recursive terraform/` before committing any `.tf` file changes
 
+### 14. OpenF1 API — 404 Means Empty Result, Not Error
+- During live sessions, OpenF1 returns `{"detail":"No results found."}` with HTTP 404 for empty queries (e.g. stints before any pit stop)
+- **Wrong:** Let `urllib.error.HTTPError` 404 propagate — all drivers silently return None
+- **Correct:** Catch 404 in `_get()` and return `[]` — empty data handled gracefully downstream
+
+### 15. OpenF1 Rate Limit — Batch Calls, Not Per-Driver
+- OpenF1 enforces **60 requests/minute** per authenticated user
+- Per-driver calls (22 drivers × 3 endpoints = 66 calls) exceed the limit → 429 Too Many Requests
+- **Wrong:** Call `stints?session_key=X&driver_number=Y` for each driver separately
+- **Correct:** Call `stints?session_key=X` (no driver filter) → group by `driver_number` in Python
+- Reduces from 66 API calls to 3 per invocation
+
+### 16. SageMaker Feature Mismatch — Model Expects 11, Not 7
+- The XGBoost model was trained with 11 features (7 raw + 4 derived)
+- Derived features: `tyre_age_sq`, `heat_deg_interaction` (track_temp × tyre_age), `wet_stint` (rainfall × stint_number), `abs_sector_delta`
+- **Wrong:** Send only the 7 raw features → `Feature shape mismatch, expected: 11, got 7` (HTTP 500)
+- **Correct:** Always compute and append all 4 derived features before calling `invoke_endpoint`
+- Feature list in `code/feature_names.json` inside `model.tar.gz` is the source of truth
+
+### 17. API Gateway Routes — Add to Terraform AND Deploy Immediately
+- Adding a route to the Lambda handler is not enough — must also add it to `terraform/modules/api_gateway/main.tf`
+- If route is needed urgently (during a race), add via AWS CLI + `aws apigateway create-deployment` first, then update Terraform
+- `api_key_required = true` (the default) blocks public frontend calls with 403 "Missing Authentication Token"
+- All public GET endpoints should have `api_key_required = false`
+
+### 18. Sessions List — Filter Non-Numeric Keys
+- When `get_latest_session()` fails, session_key falls back to `"latest"` (string)
+- This creates `logs/inference/session_latest/` in S3 which appears in the sessions list
+- **Correct:** In `handle_sessions_list()`, only include session keys where `parts[-1].isdigit()`
+- Delete junk: `aws s3 rm s3://BUCKET/logs/inference/session_latest/ --recursive`
+
+### 19. Unit Tests — Update When Function Signatures Change
+- `build_feature_vector` signature changed from `(session_key, driver_number)` to `(driver_number, session_data)`
+- Tests were patching `openf1_client.get_stints` etc. — those functions no longer exist in the hot path
+- **Correct:** Tests now build a `MOCK_SESSION_DATA` dict and pass it directly — no mocking needed
+- Always run `pytest tests/unit/ -v` locally before pushing after refactors
+
+### 20. OpenF1 OAuth2 — Credentials Format in Secrets Manager
+- Secret name: `f1-mlops/openf1-credentials`
+- Format: `{"username": "email@example.com", "password": "yourpassword"}`
+- Token endpoint: `POST https://api.openf1.org/token` with `grant_type=password`
+- Token valid 1 hour — cached at module level in Lambda, refreshed 60s before expiry
+- Register/pay at: `https://buy.stripe.com/eVqcN41BPekP0iIalBcEw02`
+
 ---
 
 ## Architecture
