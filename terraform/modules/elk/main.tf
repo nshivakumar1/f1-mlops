@@ -81,6 +81,46 @@ resource "aws_iam_role_policy" "elk_s3" {
   })
 }
 
+# CloudWatch Logs + Metrics read — required by Logstash cloudwatch plugins
+resource "aws_iam_role_policy" "elk_cloudwatch" {
+  name = "${var.project}-elk-cloudwatch-read"
+  role = aws_iam_role.elk.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams",
+          "logs:FilterLogEvents",
+          "logs:GetLogEvents",
+          "logs:StartQuery",
+          "logs:GetQueryResults",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:GetMetricData",
+          "cloudwatch:GetMetricStatistics",
+          "cloudwatch:ListMetrics",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:DescribeInstances",
+          "ec2:DescribeTags",
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "elk" {
   name = "${var.project}-elk-profile"
   role = aws_iam_role.elk.name
