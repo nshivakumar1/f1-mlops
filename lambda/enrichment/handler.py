@@ -68,8 +68,8 @@ def check_safety_car(session_data: dict) -> bool:
     """Check if safety car is active from already-fetched race control messages."""
     messages = session_data.get("race_control", [])
     for msg in reversed(messages[-10:]):
-        flag = msg.get("flag", "").upper()
-        message = msg.get("message", "").upper()
+        flag = (msg.get("flag") or "").upper()
+        message = (msg.get("message") or "").upper()
         if "SAFETY CAR" in message or flag in ("SC", "VSC"):
             return True
     return False
