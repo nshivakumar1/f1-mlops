@@ -1,261 +1,403 @@
-# F1 Race Prediction MLOps Platform
 
-Live pit-stop probability predictions for the 2026 Formula 1 season — deployed on AWS in time for the Chinese Grand Prix (Shanghai, March 13-15 2026).
+<div align="center">
+
+```
+███████╗ ██╗     ███╗   ███╗██╗      ██████╗ ██████╗ ███████╗
+██╔════╝ ██║     ████╗ ████║██║     ██╔═══██╗██╔══██╗██╔════╝
+█████╗   ██║     ██╔████╔██║██║     ██║   ██║██████╔╝███████╗
+██╔══╝   ██║     ██║╚██╔╝██║██║     ██║   ██║██╔═══╝ ╚════██║
+██║      ███████╗██║ ╚═╝ ██║███████╗╚██████╔╝██║     ███████║
+╚═╝      ╚══════╝╚═╝     ╚═╝╚══════╝ ╚═════╝ ╚═╝     ╚══════╝
+```
+
+### 🏎️ Real-time F1 Pit Stop Prediction · XGBoost · AWS · Live 2026
+
+[![CI](https://github.com/nshivakumar1/f1-mlops/actions/workflows/ci.yml/badge.svg)](https://github.com/nshivakumar1/f1-mlops/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-20%20passing-brightgreen?style=flat-square&logo=pytest)](tests/unit/)
+[![Model AUC](https://img.shields.io/badge/Model%20AUC-0.8854-blue?style=flat-square&logo=scikit-learn)](ml/training/pitstop/)
+[![Terraform](https://img.shields.io/badge/Terraform-1.9.8-7B42BC?style=flat-square&logo=terraform)](terraform/)
+[![AWS](https://img.shields.io/badge/AWS-us--east--1-FF9900?style=flat-square&logo=amazonaws)](https://aws.amazon.com)
+[![Cost](https://img.shields.io/badge/cost%2Frace%20weekend-%241.22-success?style=flat-square)](README.md#aws-resources)
+
+</div>
+
+---
+
+## What Is This?
+
+> **Predict, with 88.5% accuracy, which F1 driver will pit — before the team even radios in.**
+
+Every 60 seconds during a live race, this system:
+1. Pulls telemetry from the **OpenF1 API** for all 22 drivers
+2. Engineers 11 features and scores them through an **XGBoost model** on SageMaker
+3. Stores predictions in **S3** and serves them via **API Gateway**
+4. Fires **Slack alerts** when pit probability exceeds 85%
+5. Streams everything to **Kibana dashboards** in real time
+
+Built for the **2026 Formula 1 season** — first deployed for the Chinese Grand Prix (Shanghai, March 13–15 2026).
+
+---
 
 ## Architecture
 
 ```
-OpenF1 API (live telemetry)
-       │  every 60s
-       ▼
- EventBridge Rule ──► Lambda: enrichment
- (f1-mlops-live-poller)      │
-                             ├─► SageMaker Serverless Endpoint
-                             │   (XGBoost pitstop model, AUC 0.8854)
-                             │
-                             ├─► S3: logs/inference/session_{key}/
-                             │
-                             └─► SNS Alert (prob > 0.85)
-                                    │
-                             AWS Chatbot ──► #f1-race-alerts (Slack)
+                        ┌─────────────────────────────────────────┐
+                        │           EVERY 60 SECONDS              │
+                        └──────────────────┬──────────────────────┘
+                                           │
+                   ┌───────────────────────▼───────────────────────┐
+                   │          OpenF1 API  (oauth2 auth)            │
+                   │  stints · intervals · laps · weather · SC     │
+                   └───────────────────────┬───────────────────────┘
+                                           │  3 batch calls → 22 drivers
+                   ┌───────────────────────▼───────────────────────┐
+                   │      Lambda: enrichment  (60s timeout)        │
+                   │  feature engineering · 11 features/driver     │
+                   └────────┬──────────────┬────────────┬──────────┘
+                            │              │            │
+               ┌────────────▼───┐  ┌───────▼──────┐  ┌▼──────────────────┐
+               │    SageMaker   │  │      S3       │  │   Kinesis/HTTP    │
+               │   Serverless   │  │  logs/infer.. │  │  → Logstash       │
+               │ XGBoost AUC    │  │  session_{k}/ │  │  → Elasticsearch  │
+               │   0.8854  🎯   │  └───────┬───────┘  │  → Kibana  📊     │
+               └────────┬───────┘          │           └───────────────────┘
+                        │                  │
+               ┌────────▼───────┐  ┌───────▼───────────────────────────────┐
+               │  prob > 0.85?  │  │          API Gateway (REST)            │
+               │  SNS → Chatbot │  │  GET  /sessions/latest                 │
+               │  → Slack 🔔    │  │  GET  /predict/positions/{session_key} │
+               └────────────────┘  │  POST /predict/pitstop                 │
+                                   └───────────────────────────────────────┘
+                                                    ▲
+                                                    │
+                                   ┌────────────────┴───────────────────────┐
+                                   │        Next.js Frontend (Vercel)        │
+                                   │    Live Dashboard · Race History        │
+                                   └────────────────────────────────────────┘
 
- API Gateway ──► Lambda: rest_handler ──► SageMaker + S3
- POST /predict/pitstop
- GET  /predict/positions/{session_key}
-
- Lambda ──► Logstash HTTP (real-time) ──► Elasticsearch ──► Kibana
- S3 logs/inference/ ──► Logstash S3 input (60s poll) ┘
-                       Kibana dashboards:
-                      • F1 Race Predictions  • F1 API Health  • F1 Model Drift
-
- GitHub ──► CodePipeline ──► Terraform apply ──► AWS
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │   GitHub ──► CodePipeline ──► [Test → TerraformPlan → Approve → Apply] │
+  └────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
 
 ## Prediction Model
 
+<div align="center">
+
 | Model | Algorithm | Metric | Target | Status |
-|-------|-----------|--------|--------|--------|
-| Pitstop | XGBoost | AUC | ≥ 0.82 | ✅ 0.8854 |
-| Position | Random Forest | RMSE | < 2.1 | Planned |
-| Safety Car | LightGBM | F1 | ≥ 0.76 | Planned |
+|:------|:----------|:------:|:------:|:------:|
+| 🟢 **Pitstop** | XGBoost | AUC | ≥ 0.82 | **0.8854** ✅ |
+| 🔵 Position Finish | Random Forest | RMSE | < 2.1 | Planned |
+| 🟡 Safety Car | LightGBM | F1 | ≥ 0.76 | Planned |
 
-**7 input features**: `tyre_age`, `stint_number`, `gap_to_leader`, `air_temperature`, `track_temperature`, `rainfall`, `sector_delta`
+</div>
 
-**4 engineered features**: `tyre_age_sq`, `heat_deg_interaction`, `wet_stint`, `abs_sector_delta`
+### Feature Engineering
+
+```
+RAW (7)                          ENGINEERED (4)
+──────────────────────           ───────────────────────────────────────
+tyre_age          ──────────────► tyre_age²          (degradation curve)
+stint_number                    ► track_temp × tyre_age  (heat deg model)
+gap_to_leader                   ► rainfall × stint_number  (wet strategy)
+air_temperature                 ► |sector_delta|      (consistency proxy)
+track_temperature
+rainfall
+sector_delta
+```
+
+**Total: 11 features → 1 probability score → PIT / STAY OUT**
+
+---
+
+## Live Endpoints
+
+| Service | URL | Auth |
+|:--------|:----|:-----|
+| REST API | `https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1` | `x-api-key` (POST only) |
+| Kibana | `http://<elk-ip>:5601` | None (dev mode) |
+| Logstash | `http://<elk-ip>:8080` | None |
+
+> ELK EC2 IP changes on restart — run `terraform output kibana_url` to get the current address.
+
+---
 
 ## Quick Start
 
 ### Prerequisites
-- AWS CLI v2, configured with account `297997106614` (us-east-1)
-- Terraform ≥ 1.14
-- Python 3.9+
-
-### 1. Bootstrap Infrastructure
 
 ```bash
-# Create Terraform state bucket (one-time, already done)
-aws s3 mb s3://f1-mlops-tfstate-297997106614 --region us-east-1
-aws dynamodb create-table --table-name f1-mlops-tfstate-lock \
-  --attribute-definitions AttributeName=LockID,AttributeType=S \
-  --key-schema AttributeName=LockID,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST --region us-east-1
+# Required
+aws --version          # AWS CLI v2, configured for account 297997106614 (us-east-1)
+terraform -version     # ≥ 1.9.8
+python3 --version      # ≥ 3.9
+```
 
-# Deploy infrastructure
+### 1 — Bootstrap Infrastructure
+
+```bash
 cd terraform/environments/dev
 terraform init
 terraform apply -auto-approve
 ```
 
-### 2. Generate Training Data & Train Model
+### 2 — Train & Deploy Model
 
 ```bash
 pip install xgboost scikit-learn pandas boto3 joblib
 
-# Generate synthetic training data (94K rows)
+# Generate 94K rows of synthetic training data
 python3 scripts/generate_synthetic_data.py --bucket f1-mlops-data-297997106614 --n-races 50
 
-# Seed 2024 historical data from OpenF1 API
+# Seed 2024 historical data from OpenF1
 python3 scripts/seed_historical_data.py --bucket f1-mlops-data-297997106614
 
-# Train XGBoost model + deploy SageMaker serverless endpoint
+# Train + deploy SageMaker serverless endpoint
 python3 scripts/train_and_deploy.py --bucket f1-mlops-data-297997106614
 ```
 
 Expected output:
 ```
-Validation AUC: 0.8854 (threshold: 0.82)
-Model artifact uploaded → s3://f1-mlops-data-297997106614/models/pitstop/dry-race-v1/model.tar.gz
+Validation AUC: 0.8854  ✅  (threshold: 0.82)
+Model artifact → s3://f1-mlops-data-297997106614/models/pitstop/dry-race-v1/model.tar.gz
 Endpoint InService: f1-mlops-pitstop-endpoint
 Smoke test PASSED
 ```
 
-### 3. Enable Live Predictions (Before Each Session)
+### 3 — Go Live (Before Each Session)
 
 ```bash
-# Enable EventBridge poller (disabled between race weekends to save cost)
+# Start ELK stack (stopped between races to save cost)
+aws ec2 start-instances --instance-ids i-05e4b8ddbcce9647d --region us-east-1
+
+# Enable 60s poller
 aws events enable-rule --name f1-mlops-live-poller --region us-east-1
 
-# Pre-warm endpoint to eliminate cold start (run ~5 min before session)
-aws lambda invoke --function-name f1-mlops-prewarm \
-  --payload '{"action":"prewarm"}' --cli-binary-format raw-in-base64-out /dev/stdout
+# Pre-warm SageMaker (eliminates cold-start latency)
+aws events enable-rule --name f1-mlops-prewarm-rule --region us-east-1
 
-# After session ends
-aws events disable-rule --name f1-mlops-live-poller --region us-east-1
+# Set up Kibana dashboards (after EC2 boot)
+python3 scripts/setup_kibana_dashboards.py --host http://<elk-ip>:5601
 ```
 
-### 4. Query Predictions
+### 4 — Query the API
 
 ```bash
 API_URL="https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1"
-API_KEY="zhMEZa785U7PuWJ4o2BIp9lEgUb00t0W25NyiFSx"
 
-# On-demand pitstop prediction
+# Latest predictions for all 22 drivers
+curl "${API_URL}/sessions/latest" | jq '.predictions[:5]'
+
+# Historical session
+curl "${API_URL}/predict/positions/11245" | jq '.predictions[:5]'
+
+# On-demand prediction (requires API key)
 curl -X POST "${API_URL}/predict/pitstop" \
-  -H "x-api-key: ${API_KEY}" \
+  -H "x-api-key: <your-key>" \
   -H "Content-Type: application/json" \
-  -d '{"features": [20, 2, 5.0, 28.0, 44.0, 0, 0.3], "driver_number": 1, "session_key": 11245}'
-
-# Get all driver predictions for a session
-curl "${API_URL}/predict/positions/11245" -H "x-api-key: ${API_KEY}"
+  -d '{"features": [20, 2, 5.0, 28.0, 44.0, 0, 0.3], "driver_number": 1}'
 ```
 
-## AWS Resources
-
-| Resource | Name | Cost/Race Weekend |
-|----------|------|-------------------|
-| SageMaker Serverless | `f1-mlops-pitstop-endpoint` | ~$0.40 |
-| Lambda (4 functions) | `f1-mlops-*` | ~$0.01 |
-| API Gateway | `f1-mlops-api` | ~$0.01 |
-| ELK on EC2 | `f1-mlops-elk` (t3.medium) | ~$1.00 |
-| S3 (3 buckets) | `f1-mlops-data-*` | ~$0.05 |
-| Kinesis Firehose | 2 streams | ~$0.05 |
-| EventBridge + SNS | Included in free tier | $0.00 |
-| **Total** | | **~$1.22** |
-
-> **Cost Control**: Destroy between race weekends with `terraform destroy`. EC2 ELK is ~$1/day — stop the instance between sessions to save cost.
+---
 
 ## Repository Structure
 
 ```
-.
-├── lambda/
-│   ├── enrichment/         # Live data poller: OpenF1 → SageMaker → S3/SNS
-│   ├── rest_handler/       # API Gateway handler: POST /predict/pitstop
-│   ├── prewarm/            # Endpoint pre-warmer (eliminates cold start)
-│   └── slack_notifier/     # SNS → Slack Block Kit messages
-├── ml/
-│   ├── glue/               # PySpark feature engineering job
-│   ├── training/
-│   │   └── pitstop/        # XGBoost model + SageMaker inference script
-│   └── evaluation/         # SageMaker Pipeline (5-step DAG)
-├── scripts/
-│   ├── train_and_deploy.py       # Local train + package + deploy to SageMaker
-│   ├── generate_synthetic_data.py # Bootstrap training data (94K rows)
-│   └── seed_historical_data.py   # Pull 2024 OpenF1 historical data to S3
-├── terraform/
-│   ├── environments/dev/   # Root module (main.tf, variables.tf)
-│   └── modules/            # s3, iam, lambda, sagemaker, api_gateway,
-│                           # opensearch, kinesis, cloudwatch, stepfunctions,
-│                           # eventbridge, codepipeline
-├── tests/
-│   ├── unit/               # 20 unit tests (pytest), all passing ✅
-│   └── integration/        # E2E smoke tests
-└── buildspec.yml           # CodeBuild: test → terraform plan → apply
+f1-mlops/
+│
+├── 🔬  lambda/
+│   ├── enrichment/       ← live poller: OpenF1 → feature eng → SageMaker → S3/SNS
+│   ├── rest_handler/     ← API Gateway handler (pitstop, positions, sessions)
+│   ├── prewarm/          ← endpoint pre-warmer (eliminates cold start)
+│   └── slack_notifier/   ← SNS → Slack Block Kit messages
+│
+├── 🧠  ml/
+│   ├── glue/             ← PySpark feature engineering job
+│   ├── training/pitstop/ ← XGBoost model + SageMaker inference script
+│   └── evaluation/       ← SageMaker Pipeline DAG (5 steps)
+│
+├── 🖥️  frontend/          ← Next.js dashboard (deployed on Vercel)
+│   └── app/
+│       ├── page.tsx      ← live race predictions
+│       └── history/      ← past session results
+│
+├── 📜  scripts/
+│   ├── train_and_deploy.py          ← local train + SageMaker deploy
+│   ├── generate_synthetic_data.py   ← 94K row bootstrap dataset
+│   ├── seed_historical_data.py      ← 2024 OpenF1 historical pull
+│   └── setup_kibana_dashboards.py   ← push 9 vizs + 3 dashboards to Kibana
+│
+├── 🏗️  terraform/
+│   ├── environments/dev/  ← root module
+│   └── modules/           ← s3, iam, lambda, sagemaker, api_gateway,
+│                             kinesis, cloudwatch, eventbridge, codepipeline, elk
+│
+├── 🧪  tests/
+│   ├── unit/              ← 20 pytest tests (all passing ✅)
+│   └── integration/       ← E2E smoke tests
+│
+├── buildspec.yml          ← CodeBuild: calls ci_build.sh
+└── scripts/ci_build.sh    ← test → terraform plan → terraform apply
 ```
 
-## SageMaker Endpoint
+---
 
-- **Container**: `sagemaker-xgboost:1.7-1`
-- **Mode**: Serverless (zero idle cost, 2048MB, max_concurrency=10)
-- **Model format**: XGBoost native JSON (version-independent)
-- **Inference script**: `ml/training/pitstop/inference.py`
+## AWS Resources & Cost
 
-**Request format:**
-```json
-{"instances": [[tyre_age, stint_no, gap, air_temp, track_temp, rainfall, sector_delta, tyre_age_sq, heat_deg, wet_stint, abs_delta]]}
-```
+<div align="center">
 
-**Response format:**
-```json
-{
-  "predictions": [{
-    "pitstop_probability": 0.731,
-    "confidence": 0.462,
-    "recommendation": "PIT"
-  }]
-}
-```
+| Resource | Name | Cost / Race Weekend |
+|:---------|:-----|--------------------:|
+| SageMaker Serverless | `f1-mlops-pitstop-endpoint` | ~$0.40 |
+| Lambda × 4 | `f1-mlops-{enrichment,rest,prewarm,slack}` | ~$0.01 |
+| API Gateway | `f1-mlops-api` | ~$0.01 |
+| ELK on EC2 (t3.medium) | `f1-mlops-elk` | ~$1.00 |
+| S3 × 3 buckets | `f1-mlops-{data,artifacts,logs}-*` | ~$0.05 |
+| Kinesis Firehose | 2 streams | ~$0.05 |
+| EventBridge + SNS | — | $0.00 |
+| **TOTAL** | | **~$1.52** |
 
-## ELK Stack Dashboards
+</div>
 
-URL: `http://<elk-public-ip>:5601` — get the IP with `terraform output kibana_url`
+> **Cost tip:** Stop the ELK EC2 between races (`aws ec2 stop-instances ...`). Destroy everything between race weekends with `terraform destroy` if the next race is > 1 week away.
 
-No auth required (dev mode). EC2 ELK runs Elasticsearch with security disabled for cost savings.
-
-Three dashboards:
-- **F1 Race Predictions** — pitstop probabilities per driver over time
-- **F1 API Health** — latency percentiles, error rates, request volume
-- **F1 Model Drift** — confidence distribution trends, drift alerts
-
-## Slack Alerts
-
-Alerts fire to `#f1-race-alerts` when `pitstop_probability > 0.85`. Setup:
-
-1. Go to [AWS Chatbot Console](https://us-east-1.console.aws.amazon.com/chatbot/home)
-2. **Configure new client** → Slack → Authorize
-3. Create channel config:
-   - Channel: `#f1-race-alerts`
-   - SNS topic: `arn:aws:sns:us-east-1:297997106614:f1-mlops-alerts`
-   - IAM role: `f1-mlops-chatbot-role`
+---
 
 ## CI/CD Pipeline
 
-Triggers on push to `main` branch:
-1. **Test**: `pytest tests/unit/ -v` (20 tests)
-2. **Plan**: `terraform plan -out=tfplan.binary`
-3. **Manual approval** gate
-4. **Apply**: `terraform apply tfplan.binary`
+```
+git push origin main
+        │
+        ▼
+┌───────────────────────────────────────────────────┐
+│                  AWS CodePipeline                  │
+│                                                   │
+│  ①Source  →  ②Test  →  ③Plan  →  ④Approve  →  ⑤Apply  │
+│                  │          │                     │
+│               pytest    terraform              terraform │
+│               20 tests    plan -out           apply     │
+│                           tfplan.binary                 │
+└───────────────────────────────────────────────────┘
+        │
+        ▼ (also triggered on PR)
+┌───────────────────────────────────────────────────┐
+│               GitHub Actions (CI)                 │
+│  • pytest tests/unit/ -v                         │
+│  • terraform fmt -check                          │
+│  • terraform validate                            │
+└───────────────────────────────────────────────────┘
+```
 
-CodeStar GitHub connection requires one-time manual activation in the AWS Console.
+---
 
-## Chinese GP Race Weekend (March 13-15, 2026)
+## Race Day Checklist 🏁
 
-| Session | Key | Time (UTC) |
-|---------|-----|------------|
-| FP1 | 11235 | Mar 13 03:30 |
-| Sprint Qualifying | 11236 | Mar 13 07:30 |
-| Sprint | 11240 | Mar 14 03:00 |
-| Qualifying | 11241 | Mar 14 07:00 |
-| **Race** | **11245** | **Mar 15 07:00** |
+```bash
+# ① Start ELK EC2
+aws ec2 start-instances --instance-ids i-05e4b8ddbcce9647d --region us-east-1
 
-**Day-of race checklist:**
-- [ ] `terraform apply` — verify no drift
-- [ ] Enable EventBridge: `aws events enable-rule --name f1-mlops-live-poller --region us-east-1`
-- [ ] Prewarm endpoint 5 min before session
-- [ ] Monitor: Kibana (`http://3.221.47.245:5601`) + `#f1-race-alerts` Slack channel
-- [ ] After race: `aws events disable-rule --name f1-mlops-live-poller --region us-east-1`
-- [ ] `terraform destroy` (if next race > 1 week away)
+# ② Get new IP (changes on restart)
+aws ec2 describe-instances --instance-ids i-05e4b8ddbcce9647d \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' --output text
+
+# ③ Update logstash_url var, re-apply Terraform if needed
+# ④ Enable live poller (30 min before lights out)
+aws events enable-rule --name f1-mlops-live-poller    --region us-east-1
+aws events enable-rule --name f1-mlops-prewarm-rule   --region us-east-1
+
+# ⑤ Push Kibana dashboards
+python3 scripts/setup_kibana_dashboards.py --host http://<IP>:5601
+
+# ⑥ Watch the race 🍿
+#    Kibana: http://<IP>:5601
+#    Slack:  #f1-race-alerts
+
+# ⑦ After session — shut it all down
+aws events disable-rule --name f1-mlops-live-poller   --region us-east-1
+aws events disable-rule --name f1-mlops-prewarm-rule  --region us-east-1
+aws ec2 stop-instances  --instance-ids i-05e4b8ddbcce9647d --region us-east-1
+```
+
+---
+
+## Kibana Dashboards
+
+Three dashboards auto-provisioned via `scripts/setup_kibana_dashboards.py`:
+
+| Dashboard | Visualizations |
+|:----------|:---------------|
+| **F1 Live Race Predictions** | Pitstop probability bar · Risk band donut · Tyre compound donut · Prob timeline · Driver strategy table |
+| **API Health & Model Performance** | Avg confidence metric · Tyre age histogram · Gap-to-leader chart · Confidence drift timeline |
+| **Tyre Strategy Analysis** | Compound breakdown · Tyre age distribution · Heat degradation index |
+
+---
+
+## SageMaker Endpoint
+
+```
+Container:   sagemaker-xgboost:1.7-1
+Mode:        Serverless  (zero idle cost · 2048MB · max_concurrency=10)
+Format:      XGBoost native JSON
+
+Request:
+  {"instances": [[tyre_age, stint_no, gap, air_temp, track_temp,
+                  rainfall, sector_delta,
+                  tyre_age_sq, heat_deg, wet_stint, abs_delta]]}
+
+Response:
+  {"predictions": [{"pitstop_probability": 0.731,
+                    "confidence": 0.462,
+                    "recommendation": "PIT"}]}
+```
+
+---
+
+## Slack Alerts
+
+Fires to **#f1-race-alerts** when `pitstop_probability > 0.85`:
+
+```
+🚨 F1 PIT ALERT — Max Verstappen (RBR)
+   Pitstop Probability: 92%  |  Confidence: 78%
+   Tyre: HARD L28  |  Gap: +3.1s  |  Sector Δ: +0.8s
+   Session: 11245
+```
+
+Powered by **CloudWatch Alarm → SNS → AWS Chatbot → Slack** (boto3/CLI SDK doesn't work for Chatbot — see CLAUDE.md #11).
+
+---
 
 ## Testing
 
 ```bash
 pip install pytest moto boto3
-pytest tests/unit/ -v        # 20 tests, ~3s
+pytest tests/unit/ -v
+# ========================== 20 passed in 2.8s ==========================
 ```
 
-## Environment Variables
+---
 
-All sensitive values are in AWS Secrets Manager. Terraform manages all IAM roles and environment variable injection into Lambda.
+## 2026 Season
 
-| Secret | Description |
-|--------|-------------|
-| `f1-mlops/slack-bot-token` | Slack Bot Token for direct posting |
+| Race | Circuit | Weekend |
+|:-----|:--------|:--------|
+| 🇦🇺 R1 | Melbourne | Mar 14–16 |
+| 🇨🇳 **R2** | **Shanghai** | **Mar 21–23** |
+| 🇯🇵 R3 | Suzuka | Apr 4–6 |
+| 🇧🇭 R4 | Bahrain | Apr 11–13 |
+| 🇸🇦 R5 | Jeddah | Apr 25–27 |
+| ⋮ | ⋮ | ⋮ |
 
-## Live Endpoints
+> First live deployment: **Chinese GP, March 2026** — all 22 drivers tracked from FP1 through race day.
 
-| Service | URL | Notes |
-| ------- | --- | ----- |
-| REST API | `https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1` | Requires `x-api-key` header |
-| Kibana | `http://3.221.47.245:5601` | No auth (dev mode) |
-| Logstash HTTP | `http://3.221.47.245:8080` | Lambda pushes here |
-| API Key | `zhMEZa785U7PuWJ4o2BIp9lEgUb00t0W25NyiFSx` | Store securely |
+---
+
+<div align="center">
+
+**Built with obsession over a single race weekend.**
+
+`XGBoost` · `SageMaker Serverless` · `AWS Lambda` · `API Gateway` · `Terraform` · `Next.js` · `Kibana` · `OpenF1`
+
+</div>
