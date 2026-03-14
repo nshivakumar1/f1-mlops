@@ -151,6 +151,21 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
   aws events put-targets --rule f1-mlops-live-poller --targets '[{"Id":"EnrichmentLambda","Arn":"...","Input":"{\"session_key\":\"11236\"}"}]'
   ```
 
+### 24. Terraform `templatefile()` Interprets `%{` as Template Directive
+
+- `elk_setup.sh.tpl` contained Elasticsearch index pattern `"f1-ec2-metrics-%{+YYYY.MM.dd}"`
+- Terraform's `templatefile()` interprets `%{` as the start of a template directive (`%{if ...}`, `%{for ...}`)
+- **Wrong:** `"f1-ec2-metrics-%{+YYYY.MM.dd}"` → TerraformPlan fails: `Invalid template directive`
+- **Correct:** Escape with double percent: `"f1-ec2-metrics-%%{+YYYY.MM.dd}"` — `templatefile()` outputs literal `%{`
+- This applies to ANY `%{` literal in `.tpl` files processed by `templatefile()`
+
+### 25. Context Window Exhaustion — Agent Restart Loses In-Progress State
+
+- Long debugging sessions (Logstash + race day fixes + Gemini integration) can exhaust context
+- When the agent is restarted, it resumes from a summary — in-progress edits that were identified but not yet applied are lost
+- **Prevention:** After identifying a fix, apply it immediately before moving on to the next investigation
+- **Recovery:** Check CLAUDE.md "Pending Tasks" and git log to reconstruct what was done vs what was pending
+
 ---
 
 ## Architecture

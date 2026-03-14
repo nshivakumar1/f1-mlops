@@ -320,11 +320,11 @@ input {
 filter {
   if [type] == "lambda_logs" and [message] =~ /^REPORT RequestId/ {
     grok {
-      match => { "message" => "REPORT RequestId: %{DATA:request_id}\\s+Duration: %{NUMBER:duration_ms:float} ms\\s+Billed Duration: %{NUMBER:billed_duration_ms:float} ms\\s+Memory Size: %{NUMBER:memory_size_mb:integer} MB\\s+Max Memory Used: %{NUMBER:memory_used_mb:integer} MB%{GREEDYDATA:rest}" }
+      match => { "message" => "REPORT RequestId: %%{DATA:request_id}\\s+Duration: %%{NUMBER:duration_ms:float} ms\\s+Billed Duration: %%{NUMBER:billed_duration_ms:float} ms\\s+Memory Size: %%{NUMBER:memory_size_mb:integer} MB\\s+Max Memory Used: %%{NUMBER:memory_used_mb:integer} MB%%{GREEDYDATA:rest}" }
     }
     mutate { add_tag => ["lambda_report"] add_field => { "log_level" => "REPORT" } }
     if [rest] =~ /Init Duration/ {
-      grok { match => { "rest" => "Init Duration: %{NUMBER:init_duration_ms:float} ms" } }
+      grok { match => { "rest" => "Init Duration: %%{NUMBER:init_duration_ms:float} ms" } }
       mutate { add_tag => ["cold_start"] }
     }
     mutate { remove_field => ["rest"] }
