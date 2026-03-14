@@ -1,20 +1,18 @@
 """
-Gemini 2.5 Pro commentary client.
-Generates a 2-sentence live race strategy insight per lap.
+AI commentary client — uses Claude (Anthropic) for live race strategy insights.
 API key stored in Secrets Manager: f1-mlops/gemini-api-key
-Cached at module level — refreshes every session (cold start).
+Cached at module level with 1hr TTL.
 """
 import json
 import logging
 import time
 import boto3
-from google import genai
-from google.genai import types
+import anthropic
 
 logger = logging.getLogger(__name__)
 
-_api_key_cache: dict = {}   # {"key": str, "fetched_at": float}
-_KEY_TTL = 3600             # re-fetch after 1 hour
+_api_key_cache: dict = {}
+_KEY_TTL = 3600
 
 
 def _get_api_key() -> str:
@@ -24,7 +22,6 @@ def _get_api_key() -> str:
     client = boto3.client("secretsmanager", region_name="us-east-1")
     resp = client.get_secret_value(SecretId="f1-mlops/gemini-api-key")
     raw = resp["SecretString"]
-    # Secret may be stored as plain key string or as JSON {"api_key": "..."}
     try:
         key = json.loads(raw)["api_key"]
     except (json.JSONDecodeError, KeyError):
@@ -36,16 +33,15 @@ def _get_api_key() -> str:
 
 def generate_race_commentary(predictions: list, safety_car: bool, session_key: str) -> str:
     """
-    Generate a 2-sentence race strategy commentary using Gemini 2.5 Pro.
+    Generate a 2-sentence race strategy commentary using Claude Haiku.
     Uses top-3 highest-probability predictions as context.
-
-    Returns a commentary string, or "" on failure (non-blocking).
+    Returns commentary string, or "" on failure (non-blocking).
     """
     if not predictions:
         return ""
     try:
         key = _get_api_key()
-        client = genai.Client(api_key=key)
+        client = anthropic.Anthropic(api_key=key)
 
         top = sorted(predictions, key=lambda p: p.get("pitstop_probability", 0), reverse=True)[:3]
 
@@ -70,15 +66,12 @@ def generate_race_commentary(predictions: list, safety_car: bool, session_key: s
             "and what the strategic implication is for the race. Be specific and direct, as if speaking live on TV."
         )
 
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                max_output_tokens=120,
-                temperature=0.7,
-            ),
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=150,
+            messages=[{"role": "user", "content": prompt}],
         )
-        return response.text.strip()
+        return message.content[0].text.strip()
     except Exception as e:
-        logger.warning(f"Gemini commentary failed (non-critical): {e}")
+        logger.warning(f"AI commentary failed (non-critical): {e}")
         return ""
