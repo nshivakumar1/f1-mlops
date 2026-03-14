@@ -2,19 +2,19 @@ export default function AboutPage() {
   const stack = [
     { layer: "Data Source", tech: "OpenF1 API", detail: "Live telemetry — tyre age, gaps, compounds, safety car" },
     { layer: "Prediction Engine", tech: "XGBoost on AWS SageMaker", detail: "Serverless endpoint, 11 engineered features, updated every 30s" },
-    { layer: "Commentary", tech: "Gemini 2.5 Pro", detail: "Natural language race strategy insights generated per lap" },
+    { layer: "Commentary", tech: "Groq (Llama 3.3 70B)", detail: "Natural language race strategy insights generated per lap" },
     { layer: "Orchestration", tech: "AWS Lambda + EventBridge", detail: "4 Lambda functions, enrichment fires every 60s during sessions" },
     { layer: "Storage", tech: "S3 + Elasticsearch", detail: "Raw predictions in S3, real-time indexing via Logstash → ELK" },
     { layer: "Alerts", tech: "CloudWatch → SNS → AWS Chatbot", detail: "Slack alerts for model drift, Lambda errors, billing cap" },
     { layer: "CI/CD", tech: "AWS CodePipeline + GitHub Actions", detail: "5-stage pipeline: Test → Plan → Approve → Deploy via Terraform" },
-    { layer: "Frontend", tech: "Next.js → Vercel", detail: "Live predictions, race history, Gemini commentary — updates every 30s" },
+    { layer: "Frontend", tech: "Next.js → Vercel", detail: "Live predictions, race history, AI commentary — updates every 30s" },
   ];
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
       <h1 className="text-2xl font-black mb-2">About this <span className="text-[#e10600]">Project</span></h1>
       <p className="text-gray-400 text-sm mb-10 leading-relaxed">
-        An end-to-end MLOps system that predicts F1 pitstops in real-time during each session. Two XGBoost models run live — one predicts pitstop probability per driver per lap, one predicts race outcome probabilities. Gemini 2.5 Pro generates natural language strategy commentary from the raw predictions.
+        An end-to-end MLOps system that predicts F1 pitstops in real-time during each session. Two XGBoost models run live — one predicts pitstop probability per driver per lap, one predicts race outcome probabilities. Groq (Llama 3.3 70B) generates natural language strategy commentary from the raw predictions.
       </p>
 
       {/* Architecture */}

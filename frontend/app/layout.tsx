@@ -24,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </nav>
         <main>{children}</main>
         <footer className="border-t border-[#2a2a2a] px-6 py-4 text-center text-xs text-gray-600 mt-16">
-          Powered by XGBoost · AWS SageMaker · Gemini 2.5 Pro · Data: OpenF1
+          Powered by XGBoost · AWS SageMaker · Groq (Llama 3.3) · Data: OpenF1
         </footer>
       </body>
     </html>
