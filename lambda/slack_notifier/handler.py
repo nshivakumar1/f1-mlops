@@ -72,7 +72,7 @@ def build_pitstop_alert_blocks(data: dict) -> list:
     if commentary:
         blocks.append({
             "type": "section",
-            "text": {"type": "mrkdwn", "text": f"🤖 *Claude Strategy Insight:*\n_{commentary}_"}
+            "text": {"type": "mrkdwn", "text": f"🤖 *AI Strategy Insight:*\n_{commentary}_"}
         })
 
     blocks.append({"type": "divider"})

@@ -1,5 +1,6 @@
 """
-AI commentary client — uses Claude (Anthropic) for live race strategy insights.
+AI commentary client — uses Groq (Llama 3.3 70B) for live race strategy insights.
+Free tier: 14,400 req/day, no credit card required (console.groq.com).
 API key stored in Secrets Manager: f1-mlops/gemini-api-key
 Cached at module level with 1hr TTL.
 """
@@ -7,7 +8,7 @@ import json
 import logging
 import time
 import boto3
-import anthropic
+from groq import Groq
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ def _get_api_key() -> str:
 
 def generate_race_commentary(predictions: list, safety_car: bool, session_key: str) -> str:
     """
-    Generate a 2-sentence race strategy commentary using Claude Haiku.
+    Generate a 2-sentence race strategy commentary using Llama 3.3 70B via Groq.
     Uses top-3 highest-probability predictions as context.
     Returns commentary string, or "" on failure (non-blocking).
     """
@@ -41,7 +42,7 @@ def generate_race_commentary(predictions: list, safety_car: bool, session_key: s
         return ""
     try:
         key = _get_api_key()
-        client = anthropic.Anthropic(api_key=key)
+        client = Groq(api_key=key)
 
         top = sorted(predictions, key=lambda p: p.get("pitstop_probability", 0), reverse=True)[:3]
 
@@ -66,12 +67,13 @@ def generate_race_commentary(predictions: list, safety_car: bool, session_key: s
             "and what the strategic implication is for the race. Be specific and direct, as if speaking live on TV."
         )
 
-        message = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=150,
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
+            max_tokens=150,
+            temperature=0.7,
         )
-        return message.content[0].text.strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
         logger.warning(f"AI commentary failed (non-critical): {e}")
         return ""
