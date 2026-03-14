@@ -8,7 +8,8 @@ import json
 import logging
 import time
 import boto3
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,12 @@ def _get_api_key() -> str:
         return _api_key_cache["key"]
     client = boto3.client("secretsmanager", region_name="us-east-1")
     resp = client.get_secret_value(SecretId="f1-mlops/gemini-api-key")
-    key = json.loads(resp["SecretString"])["api_key"]
+    raw = resp["SecretString"]
+    # Secret may be stored as plain key string or as JSON {"api_key": "..."}
+    try:
+        key = json.loads(raw)["api_key"]
+    except (json.JSONDecodeError, KeyError):
+        key = raw.strip()
     _api_key_cache["key"] = key
     _api_key_cache["fetched_at"] = now
     return key
@@ -39,8 +45,7 @@ def generate_race_commentary(predictions: list, safety_car: bool, session_key: s
         return ""
     try:
         key = _get_api_key()
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel("gemini-2.5-pro")
+        client = genai.Client(api_key=key)
 
         top = sorted(predictions, key=lambda p: p.get("pitstop_probability", 0), reverse=True)[:3]
 
@@ -65,9 +70,10 @@ def generate_race_commentary(predictions: list, safety_car: bool, session_key: s
             "and what the strategic implication is for the race. Be specific and direct, as if speaking live on TV."
         )
 
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(
                 max_output_tokens=120,
                 temperature=0.7,
             ),
