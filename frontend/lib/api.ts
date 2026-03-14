@@ -16,6 +16,7 @@ export interface SessionData {
   safety_car_active: boolean;
   processing_time_ms?: number;
   predictions: Prediction[];
+  commentary?: string;
 }
 
 export async function fetchLatestSession(): Promise<SessionData> {
@@ -38,16 +39,17 @@ export async function fetchSession(sessionKey: string): Promise<SessionData> {
 }
 
 export const TEAM_COLORS: Record<string, string> = {
-  "Red Bull Racing": "#3671C6",
-  "Ferrari": "#E8002D",
-  "Mercedes": "#27F4D2",
-  "McLaren": "#FF8000",
-  "Aston Martin": "#229971",
-  "Alpine": "#FF87BC",
-  "Williams": "#64C4FF",
-  "Haas F1 Team": "#B6BABD",
-  "Kick Sauber": "#52E252",
-  "RB": "#6692FF",
+  "McLaren":       "#FF8000",
+  "Ferrari":       "#E8002D",
+  "Mercedes":      "#00D2BE",
+  "Red Bull":      "#3671C6",
+  "Williams":      "#64C4FF",
+  "Aston Martin":  "#006F62",
+  "Alpine":        "#FF87BC",
+  "Haas":          "#B6BABD",
+  "Racing Bulls":  "#6692FF",
+  "Audi":          "#BB0000",
+  "Cadillac":      "#1B3D6F",
 };
 
 export const TYRE_COLORS: Record<string, string> = {

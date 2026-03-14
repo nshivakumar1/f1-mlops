@@ -40,6 +40,7 @@ resource "aws_lambda_function" "enrichment" {
       SNS_TOPIC_ARN      = var.sns_topic_arn
       AWS_REGION_NAME    = var.aws_region
       LOGSTASH_ENDPOINT  = var.logstash_url
+      GEMINI_SECRET_NAME = "f1-mlops/gemini-api-key"
     }
   }
 

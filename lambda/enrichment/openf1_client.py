@@ -148,8 +148,8 @@ def get_race_control(session_key: str) -> list:
 
 def get_latest_session() -> dict:
     """Returns the most recent session that has already started."""
-    import datetime
-    now = datetime.datetime.utcnow()
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
     sessions = _get("sessions", {"year": now.year})
     now_iso = now.strftime("%Y-%m-%dT%H:%M")
     started = [s for s in sessions if s.get("date_start", "") <= now_iso]
@@ -277,7 +277,7 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
 
     # Derived features (required by model — must match training)
     tyre_age_sq = tyre_age ** 2
-    heat_deg_interaction = track_temperature * tyre_age
+    heat_deg_interaction = track_temperature * tyre_age / 100.0
     wet_stint = rainfall * stint_number
     abs_sector_delta = abs(sector_delta)
 

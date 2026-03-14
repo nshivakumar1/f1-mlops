@@ -128,6 +128,29 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - Token valid 1 hour — cached at module level in Lambda, refreshed 60s before expiry
 - Register/pay at: `https://buy.stripe.com/eVqcN41BPekP0iIalBcEw02`
 
+### 21. OpenF1 Pre-populates Full Season Calendar — `get_latest_session()` Bug
+
+- OpenF1 returns ALL sessions for the year (including future ones like Abu Dhabi in December)
+- `sessions[-1]` picks the session with the latest date, which is WRONG during the actual season
+- **Correct:** Filter to sessions where `date_start <= now_utc` before picking the last one
+- Fixed in `openf1_client.py` `get_latest_session()` to use `datetime.utcnow()` comparison
+
+### 22. OpenF1 `race_control` Null Fields — `.upper()` on None
+
+- `msg.get("flag", "")` returns `None` (not `""`) when the API field is `null`
+- Calling `.upper()` on `None` raises `AttributeError`
+- **Correct:** Use `(msg.get("flag") or "").upper()` pattern everywhere
+
+### 23. `aws lambda update-function-configuration --environment` Replaces ALL Env Vars
+
+- Passing `--environment Variables={KEY=VALUE}` with only one key **wipes all other env vars**
+- **Correct:** Always include all existing env vars when calling `update-function-configuration`
+- For a quick race-day session override, use EventBridge target `Input` JSON instead:
+
+  ```bash
+  aws events put-targets --rule f1-mlops-live-poller --targets '[{"Id":"EnrichmentLambda","Arn":"...","Input":"{\"session_key\":\"11236\"}"}]'
+  ```
+
 ---
 
 ## Architecture
@@ -138,9 +161,24 @@ GitHub → CodePipeline → [Test → TerraformPlan → Approve → Deploy]
                         Lambda (enrichment, rest_handler, prewarm, slack_notifier)
                         SageMaker Serverless Endpoint
                         S3 (data + artifacts)
-                        Kinesis Firehose → ELK on EC2
+                        Kinesis Firehose → ELK on EC2 (predictions + standings only)
                         CloudWatch Alarms → SNS → AWS Chatbot → Slack #f1-race-alerts
+                        CloudWatch Logs/Metrics → Grafana (Lambda, SageMaker, EC2 infra)
 ```
+
+### Observability Split
+
+- **ELK (Kibana):** Race domain data — pitstop predictions, driver standings, inference events from Logstash HTTP input (port 8080) and S3. Pipelines: `inference.conf`, `training.conf`.
+- **Grafana:** Infrastructure/ops metrics — Lambda duration/errors/throttles, SageMaker invocation latency, EC2 CPU/network. Uses native CloudWatch datasource (no Logstash needed).
+- **Do NOT** add `cloudwatch_logs.conf` or `cloudwatch_metrics.conf` back to `/opt/elk/logstash/pipeline/` — `logstash-input-cloudwatch_logs` is not bundled in `logstash-integration-aws` and `cloudwatch` input uses `filters` not `dimensions`.
+
+## Grafana EC2
+
+- **Instance ID:** `i-09c735935e93429d5` (t3.micro, stop between races)
+- **Login:** admin / f1mlops2026
+- **Datasource:** CloudWatch pre-provisioned via IAM role `f1-mlops-grafana-role` (CloudWatchReadOnlyAccess)
+- **Security group:** `sg-07794e4eb4ba20283` (port 3000 + 22)
+- **Note:** No Elastic IP — get fresh IP after each start with `aws ec2 describe-instances --instance-ids i-09c735935e93429d5 --region us-east-1 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text`
 
 ## Key File Paths
 - `buildspec.yml` — CodeBuild spec (calls `scripts/ci_build.sh`)

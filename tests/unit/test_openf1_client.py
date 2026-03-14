@@ -68,7 +68,7 @@ def test_feature_vector_values():
     assert rainfall == 0
     assert sector_delta > 0         # lap 12 sector 1 slower than avg of laps 9-11
     assert tyre_age_sq == 121       # 11 ** 2
-    assert abs(heat_deg - 44.2 * 11) < 0.01
+    assert abs(heat_deg - 44.2 * 11 / 100.0) < 0.01
     assert wet_stint == 0           # rainfall(0) * stint_number(1)
     assert abs_sector_delta == sector_delta  # positive delta
 

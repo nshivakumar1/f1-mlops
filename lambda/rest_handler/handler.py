@@ -93,6 +93,7 @@ def handle_positions_get(session_key: str) -> dict:
             "session_key": session_key,
             "prediction_time": data.get("timestamp"),
             "safety_car_active": data.get("safety_car_active", False),
+            "commentary": data.get("commentary", ""),
             "predictions": [
                 {
                     "driver_number": p["driver_number"],
@@ -149,6 +150,7 @@ def handle_latest_session() -> dict:
             "prediction_time": data.get("timestamp"),
             "safety_car_active": data.get("safety_car_active", False),
             "processing_time_ms": data.get("processing_time_ms"),
+            "commentary": data.get("commentary", ""),
             "predictions": [
                 {
                     "driver_number": p["driver_number"],

@@ -48,12 +48,12 @@ def build_pitstop_alert_blocks(data: dict) -> list:
     tyre = data.get("tyre_compound", "UNK")
     tyre_age = data.get("tyre_age", 0)
     session = data.get("session_key", "")
+    commentary = data.get("commentary", "")
 
     prob_bar = "█" * int(prob * 10) + "░" * (10 - int(prob * 10))
     prob_pct = f"{prob * 100:.1f}%"
-    color = TEAM_COLORS.get(team, "#888888")
 
-    return [
+    blocks = [
         {
             "type": "header",
             "text": {"type": "plain_text", "text": f"🏁 Pitstop Alert — {driver}"}
@@ -67,14 +67,22 @@ def build_pitstop_alert_blocks(data: dict) -> list:
                 {"type": "mrkdwn", "text": f"*Probability:*\n`{prob_bar}` {prob_pct}"},
             ]
         },
-        {"type": "divider"},
-        {
-            "type": "context",
-            "elements": [
-                {"type": "mrkdwn", "text": f"Confidence threshold: >85% | Team: _{team}_"}
-            ]
-        }
     ]
+
+    if commentary:
+        blocks.append({
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"🤖 *Gemini Strategy Insight:*\n_{commentary}_"}
+        })
+
+    blocks.append({"type": "divider"})
+    blocks.append({
+        "type": "context",
+        "elements": [
+            {"type": "mrkdwn", "text": f"Confidence threshold: >85% | Team: _{team}_"}
+        ]
+    })
+    return blocks
 
 
 def post_to_slack(token: str, channel: str, blocks: list, text: str):

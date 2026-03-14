@@ -22,6 +22,7 @@ from openf1_client import (
     get_latest_session,
     ALL_DRIVER_NUMBERS,
 )
+from gemini_client import generate_race_commentary
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -92,6 +93,7 @@ def publish_alerts(alert_predictions: list):
                     "tyre_compound": p["tyre_compound"],
                     "tyre_age": p["features"][0],
                     "session_key": p["session_key"],
+                    "commentary": p.get("commentary", ""),
                 }, indent=2),
             )
         except Exception as e:
@@ -217,7 +219,6 @@ def lambda_handler(event, context):
             feature_lists = [fd["features"] for _, fd in driver_features]
             batch_results = invoke_pitstop_model_batch(feature_lists)
 
-            alert_queue = []
             for (driver_number, feature_data), prediction in zip(driver_features, batch_results):
                 result = {
                     **feature_data,
@@ -227,16 +228,8 @@ def lambda_handler(event, context):
                 }
                 predictions.append(result)
 
-                if prediction.get("pitstop_probability", 0) > 0.85:
-                    alert_queue.append(result)
-
-            # Fire all alerts concurrently (non-blocking relative to each other)
-            if alert_queue:
-                publish_alerts(alert_queue)
-
         except Exception as e:
             logger.error(f"SageMaker batch inference failed: {e}")
-            # Fall back to last good predictions for this session
             stale = _last_good_predictions.get(session_key, [])
             if stale:
                 logger.warning(f"SageMaker down — serving {len(stale)} stale predictions")
@@ -246,6 +239,21 @@ def lambda_handler(event, context):
     # ── 5. Update fallback cache ─────────────────────────────────────────────
     if predictions and not any(e.get("batch") for e in errors):
         _last_good_predictions[session_key] = predictions
+
+    # ── 5b. Gemini race commentary (non-blocking — failure returns "") ────────
+    commentary = generate_race_commentary(predictions, safety_car_active, session_key)
+    if commentary:
+        logger.info(f"Gemini commentary: {commentary[:80]}...")
+
+    # ── 5c. Fire SNS alerts with commentary attached ─────────────────────────
+    if driver_features:
+        alert_queue_with_commentary = [
+            {**p, "commentary": commentary}
+            for p in predictions
+            if p.get("prediction", {}).get("pitstop_probability", 0) > 0.85
+        ]
+        if alert_queue_with_commentary:
+            publish_alerts(alert_queue_with_commentary)
 
     # ── 6. Persist to S3 ────────────────────────────────────────────────────
     processing_ms = round((time.time() - start_time) * 1000)
@@ -261,6 +269,7 @@ def lambda_handler(event, context):
             "errors": errors,
             "safety_car_active": safety_car_active,
             "processing_time_ms": processing_ms,
+            "commentary": commentary,
         }),
         ContentType="application/json",
     )

@@ -108,8 +108,19 @@ export default function LivePage() {
         </div>
       )}
       {data && !loading && (
-        <div className="space-y-3">
-          {data.predictions.map((p, i) => <DriverCard key={p.driver_number} p={p} rank={i + 1} />)}
+        <div className="space-y-4">
+          {data.commentary && (
+            <div className="bg-[#0f0f1a] border border-[#3671c6] rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-bold text-[#3671c6] uppercase tracking-widest">Gemini Strategy Insight</span>
+                <span className="text-xs text-gray-600">· AI · Live</span>
+              </div>
+              <p className="text-sm text-gray-200 leading-relaxed italic">{data.commentary}</p>
+            </div>
+          )}
+          <div className="space-y-3">
+            {data.predictions.map((p, i) => <DriverCard key={p.driver_number} p={p} rank={i + 1} />)}
+          </div>
         </div>
       )}
     </div>
