@@ -275,7 +275,7 @@ processors:
 
 output.elasticsearch:
   hosts: ["\${ELASTICSEARCH_HOST}"]
-  index: "f1-ec2-metrics-%{+YYYY.MM.dd}"
+  index: "f1-ec2-metrics-%%{+YYYY.MM.dd}"
 
 setup.template:
   name: f1-ec2-metrics

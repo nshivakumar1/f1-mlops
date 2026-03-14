@@ -67,3 +67,38 @@ export function getTeamColor(team: string): string {
 export function getTyreColor(compound: string): string {
   return TYRE_COLORS[compound?.toUpperCase()] || "#666666";
 }
+
+export interface DriverPosition {
+  driver_number: number;
+  x: number;
+  y: number;
+  date: string;
+}
+
+export async function fetchDriverPositions(sessionKey: string): Promise<DriverPosition[]> {
+  const since = new Date(Date.now() - 30000).toISOString();
+  try {
+    const res = await fetch(
+      `https://api.openf1.org/v1/position?session_key=${sessionKey}&date>=${since}`,
+      { cache: "no-store" }
+    );
+    if (!res.ok) return [];
+    const data: any[] = await res.json();
+    if (!Array.isArray(data)) return [];
+    const latest = new Map<number, DriverPosition>();
+    for (const p of data) {
+      const existing = latest.get(p.driver_number);
+      if (!existing || p.date > existing.date) {
+        latest.set(p.driver_number, {
+          driver_number: p.driver_number,
+          x: p.x,
+          y: p.y,
+          date: p.date,
+        });
+      }
+    }
+    return Array.from(latest.values());
+  } catch {
+    return [];
+  }
+}

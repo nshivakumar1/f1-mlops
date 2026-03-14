@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { fetchLatestSession, getTeamColor, getTyreColor, type SessionData } from "@/lib/api";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { fetchLatestSession, fetchDriverPositions, getTeamColor, getTyreColor, type SessionData, type DriverPosition } from "@/lib/api";
 
 const REFRESH_INTERVAL = 30_000;
 
@@ -44,6 +44,86 @@ function DriverCard({ p, rank }: { p: SessionData["predictions"][0]; rank: numbe
         {isHot && <span className="text-xs text-[#e10600] font-bold animate-pulse">PIT SOON</span>}
       </div>
       <ProbabilityBar value={p.pitstop_probability} />
+    </div>
+  );
+}
+
+const MAP_W = 700;
+const MAP_H = 400;
+const MAP_PAD = 30;
+
+function RaceMap({ sessionKey, predictions }: { sessionKey: string; predictions: SessionData["predictions"] }) {
+  const [driverPositions, setDriverPositions] = useState<Map<number, { x: number; y: number }>>(new Map());
+  const trackPointsRef = useRef<{ x: number; y: number }[]>([]);
+  const [bounds, setBounds] = useState<{ minX: number; maxX: number; minY: number; maxY: number } | null>(null);
+  const [trackSnapshot, setTrackSnapshot] = useState<{ x: number; y: number }[]>([]);
+
+  useEffect(() => {
+    const poll = async () => {
+      const data: DriverPosition[] = await fetchDriverPositions(sessionKey);
+      if (data.length === 0) return;
+
+      const newPos = new Map<number, { x: number; y: number }>();
+      for (const d of data) newPos.set(d.driver_number, { x: d.x, y: d.y });
+      setDriverPositions(newPos);
+
+      const incoming = data.map((d) => ({ x: d.x, y: d.y }));
+      const seen = new Set(trackPointsRef.current.map((p) => `${Math.round(p.x / 10)},${Math.round(p.y / 10)}`));
+      const fresh = incoming.filter((p) => {
+        const k = `${Math.round(p.x / 10)},${Math.round(p.y / 10)}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      if (fresh.length > 0) {
+        trackPointsRef.current = [...trackPointsRef.current, ...fresh];
+        const pts = trackPointsRef.current;
+        const xs = pts.map((p) => p.x);
+        const ys = pts.map((p) => p.y);
+        setBounds({ minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) });
+        setTrackSnapshot([...pts]);
+      }
+    };
+
+    poll();
+    const t = setInterval(poll, 5000);
+    return () => clearInterval(t);
+  }, [sessionKey]);
+
+  const toSVG = (x: number, y: number) => {
+    if (!bounds) return { sx: MAP_PAD, sy: MAP_PAD };
+    const rangeX = bounds.maxX - bounds.minX || 1;
+    const rangeY = bounds.maxY - bounds.minY || 1;
+    return {
+      sx: MAP_PAD + ((x - bounds.minX) / rangeX) * (MAP_W - 2 * MAP_PAD),
+      sy: MAP_PAD + ((y - bounds.minY) / rangeY) * (MAP_H - 2 * MAP_PAD),
+    };
+  };
+
+  const colorMap = Object.fromEntries(predictions.map((p) => [p.driver_number, getTeamColor(p.team)]));
+
+  return (
+    <div className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-4">
+      <div className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Live Circuit Map</div>
+      <svg width="100%" viewBox={`0 0 ${MAP_W} ${MAP_H}`} className="w-full">
+        {bounds && trackSnapshot.map((p, i) => {
+          const { sx, sy } = toSVG(p.x, p.y);
+          return <circle key={i} cx={sx} cy={sy} r={1.5} fill="#333" />;
+        })}
+        {bounds && Array.from(driverPositions.entries()).map(([num, pos]) => {
+          const { sx, sy } = toSVG(pos.x, pos.y);
+          const color = colorMap[num] || "#888";
+          return (
+            <g key={num}>
+              <circle cx={sx} cy={sy} r={7} fill={color} opacity={0.9} />
+              <text x={sx} y={sy + 4} textAnchor="middle" fontSize={7} fill="#000" fontWeight="bold">{num}</text>
+            </g>
+          );
+        })}
+      </svg>
+      {driverPositions.size === 0 && (
+        <div className="text-center text-gray-600 text-xs py-6">Waiting for position data…</div>
+      )}
     </div>
   );
 }
@@ -118,6 +198,7 @@ export default function LivePage() {
               <p className="text-sm text-gray-200 leading-relaxed italic">{data.commentary}</p>
             </div>
           )}
+          <RaceMap sessionKey={data.session_key} predictions={data.predictions} />
           <div className="space-y-3">
             {data.predictions.map((p, i) => <DriverCard key={p.driver_number} p={p} rank={i + 1} />)}
           </div>
