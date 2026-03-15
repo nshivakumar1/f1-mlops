@@ -152,6 +152,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: tfplan-${{ github.sha }}
+          path: .  # restore to workspace root, preserving terraform/... directory structure
 
       - name: Terraform init
         run: terraform init -input=false
