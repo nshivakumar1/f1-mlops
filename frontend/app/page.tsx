@@ -57,8 +57,11 @@ function RaceMap({ sessionKey, predictions }: { sessionKey: string; predictions:
   const trackPointsRef = useRef<{ x: number; y: number }[]>([]);
   const [bounds, setBounds] = useState<{ minX: number; maxX: number; minY: number; maxY: number } | null>(null);
   const [trackSnapshot, setTrackSnapshot] = useState<{ x: number; y: number }[]>([]);
+  // Skip map polling if session_key isn't a real numeric key (OpenF1 fallback)
+  const isValidSession = sessionKey && /^\d+$/.test(sessionKey);
 
   useEffect(() => {
+    if (!isValidSession) return;
     const poll = async () => {
       const data: DriverPosition[] = await fetchDriverPositions(sessionKey);
       if (data.length === 0) return;
@@ -121,7 +124,10 @@ function RaceMap({ sessionKey, predictions }: { sessionKey: string; predictions:
           );
         })}
       </svg>
-      {driverPositions.size === 0 && (
+      {!isValidSession && (
+        <div className="text-center text-gray-600 text-xs py-6">Circuit map unavailable — OpenF1 position API overloaded during race</div>
+      )}
+      {isValidSession && driverPositions.size === 0 && (
         <div className="text-center text-gray-600 text-xs py-6">Waiting for position data…</div>
       )}
     </div>
