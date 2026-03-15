@@ -271,10 +271,10 @@ processors:
       fields:
         service: ec2-elk
         environment: f1-mlops
-        instance_id: \${INSTANCE_ID}
+        instance_id: $${INSTANCE_ID}
 
 output.elasticsearch:
-  hosts: ["\${ELASTICSEARCH_HOST}"]
+  hosts: ["$${ELASTICSEARCH_HOST}"]
   index: "f1-ec2-metrics-%%{+YYYY.MM.dd}"
 
 setup.template:

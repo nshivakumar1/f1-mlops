@@ -210,6 +210,13 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - **Correct:** Set Root Directory to `frontend` in Vercel dashboard → Project → Settings → General
 - `vercel.json` at repo root should only contain valid properties (e.g. `framework`)
 
+### 33. Terraform `templatefile()` — `\${VAR}` Does NOT Escape, Use `$${VAR}`
+
+- `\${INSTANCE_ID}` in `.tpl` files is NOT an escape — Terraform still tries to interpolate it as a template variable
+- **Wrong:** `instance_id: \${INSTANCE_ID}` → `vars map does not contain key "INSTANCE_ID"`
+- **Correct:** `instance_id: $${INSTANCE_ID}` — `$$` is the escape, outputs literal `${INSTANCE_ID}` at runtime
+- Applies to any runtime shell/Metricbeat/Logstash variable references in `.tpl` files that should not be resolved by Terraform
+
 ### 32. Kibana Dashboard Setup — Run Script After Starting ELK EC2
 
 - `scripts/setup_kibana_dashboards.sh <kibana_url>` creates 4 visualizations + dashboard via Kibana Saved Objects API
