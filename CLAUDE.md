@@ -217,6 +217,39 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - **Correct:** `instance_id: $${INSTANCE_ID}` — `$$` is the escape, outputs literal `${INSTANCE_ID}` at runtime
 - Applies to any runtime shell/Metricbeat/Logstash variable references in `.tpl` files that should not be resolved by Terraform
 
+### 34. EC2 `user_data` 16 KB Limit — Use S3 Bootstrapper for Large Scripts
+
+- EC2 `user_data` is limited to 16384 bytes raw; `elk_setup.sh.tpl` renders to ~22 KB
+- **Wrong:** `user_data = templatefile(...)` directly → `expected length of user_data to be in the range (0 - 16384)`
+- **Correct:** Add `aws_s3_object` to upload the rendered script to S3, then use a minimal ~5-line `user_data` that downloads and runs it:
+  ```hcl
+  resource "aws_s3_object" "elk_setup" {
+    bucket  = var.s3_bucket
+    key     = "scripts/elk_setup.sh"
+    content = templatefile("${path.module}/templates/elk_setup.sh.tpl", { ... })
+  }
+  # user_data becomes: aws s3 cp s3://BUCKET/scripts/elk_setup.sh /tmp/ && bash /tmp/elk_setup.sh
+  ```
+- Add `depends_on = [aws_s3_object.elk_setup]` to the `aws_instance` resource
+
+### 35. GitHub Actions `download-artifact@v4` — LCA Strips Common Path Prefix
+
+- When uploading multiple paths, `upload-artifact@v4` calculates the Least Common Ancestor (LCA) and strips it from paths inside the artifact
+- Uploading `terraform/environments/dev/tfplan.binary` + `terraform/modules/lambda/*.zip` → LCA is `terraform/`, stored internally as `environments/dev/tfplan.binary`
+- `download-artifact@v4` with `path: .` extracts to `./environments/dev/tfplan.binary` — missing the `terraform/` prefix
+- **Correct:** Use `path: terraform` on download to restore full `terraform/environments/dev/tfplan.binary` path
+
+### 36. Terraform State Drift — Import Existing Resources Before Apply
+
+- Resources created manually or in previous pipeline runs may exist in AWS but not in Terraform state
+- Apply will fail with `ConflictException` or `Duplicate` errors trying to recreate them
+- **Fix:** Run `terraform import <resource_address> <resource_id>` locally to bring them into state
+  ```bash
+  terraform import module.elk.aws_key_pair.elk f1-mlops-elk-key
+  terraform import "module.api_gateway.aws_api_gateway_resource.sessions" "<api-id>/<resource-id>"
+  ```
+- After importing locally, push an empty commit to trigger a fresh plan (the old plan binary becomes stale after any state change)
+
 ### 32. Kibana Dashboard Setup — Run Script After Starting ELK EC2
 
 - `scripts/setup_kibana_dashboards.sh <kibana_url>` creates 4 visualizations + dashboard via Kibana Saved Objects API
