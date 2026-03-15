@@ -1,4 +1,4 @@
-name: F1 MLOps CI
+name: F1 MLOps CI/CD
 
 on:
   push:
@@ -6,8 +6,18 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  id-token: write  # OIDC auth to AWS
+  contents: read
+
+env:
+  TF_VERSION: "1.9.8"
+  TF_WORKING_DIR: terraform/environments/dev
+
 jobs:
+  # ── 1. Tests + static checks (every push/PR) ────────────────────────────────
   test:
+    name: Test & Validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,28 +32,135 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run unit tests
-        run: pytest tests/unit/ -v --tb=short --cov=lambda --cov=ml --cov-report=xml
-
-      - name: Upload coverage
-        uses: codecov/codecov-action@v4
-        with:
-          file: coverage.xml
-
-  terraform-validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+        run: pytest tests/unit/ -v --tb=short
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: "1.9.8"
+          terraform_version: ${{ env.TF_VERSION }}
 
-      - name: Terraform Format Check
+      - name: Terraform format check
         run: terraform fmt -check -recursive terraform/
 
-      - name: Terraform Validate
+      - name: Terraform validate
         run: |
-          cd terraform/environments/dev
+          cd ${{ env.TF_WORKING_DIR }}
           terraform init -backend=false
           terraform validate
+
+  # ── 2. Terraform plan (main branch only) ────────────────────────────────────
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.GH_ACTIONS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build Lambda ZIPs (Linux-compatible wheels)
+        run: |
+          for func in enrichment rest_handler prewarm slack_notifier; do
+            src="lambda/${func}"
+            out="terraform/modules/lambda/${func}.zip"
+            if [ ! -d "$src" ]; then continue; fi
+            mkdir -p "build/${func}"
+            if [ -f "${src}/requirements.txt" ]; then
+              pip install --quiet \
+                --platform manylinux2014_x86_64 \
+                --implementation cp \
+                --python-version 3.12 \
+                --only-binary=:all: \
+                -r "${src}/requirements.txt" \
+                -t "build/${func}/" || \
+              pip install --quiet -r "${src}/requirements.txt" -t "build/${func}/"
+            fi
+            cp "${src}"/*.py "build/${func}/"
+            (cd "build/${func}" && zip -qr "../../${out}" .)
+            echo "Built ${out} ($(du -sh ${out} | cut -f1))"
+          done
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform init
+        run: terraform init -input=false
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform plan
+        run: |
+          terraform plan -input=false -out=tfplan.binary 2>&1 | tee plan_output.txt
+          terraform show -json tfplan.binary > tfplan.json
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Plan summary
+        run: |
+          echo "### Terraform Plan" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          grep -E "^Plan:|will be created|will be destroyed|will be updated|No changes" \
+            ${{ env.TF_WORKING_DIR }}/plan_output.txt >> $GITHUB_STEP_SUMMARY || \
+            tail -5 ${{ env.TF_WORKING_DIR }}/plan_output.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload plan artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.sha }}
+          path: |
+            ${{ env.TF_WORKING_DIR }}/tfplan.binary
+            ${{ env.TF_WORKING_DIR }}/tfplan.json
+            terraform/modules/lambda/enrichment.zip
+            terraform/modules/lambda/rest_handler.zip
+            terraform/modules/lambda/prewarm.zip
+            terraform/modules/lambda/slack_notifier.zip
+          retention-days: 7
+
+  # ── 3. Terraform apply (requires manual approval via GitHub environment) ─────
+  deploy:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production  # GitHub environment — add yourself as required reviewer
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.GH_ACTIONS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Download plan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ github.sha }}
+
+      - name: Terraform init
+        run: terraform init -input=false
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Terraform apply
+        run: terraform apply -input=false -auto-approve tfplan.binary
+        working-directory: ${{ env.TF_WORKING_DIR }}
+
+      - name: Print outputs
+        run: terraform output -json
+        working-directory: ${{ env.TF_WORKING_DIR }}
