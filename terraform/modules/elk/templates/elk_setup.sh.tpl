@@ -234,7 +234,8 @@ output {
 CONF
 
 # ── 7b. Metricbeat config ─────────────────────────────────────────────────────
-INSTANCE_ID=$(curl -sf http://169.254.169.254/latest/meta-data/instance-id)
+INSTANCE_ID=$(curl -sf http://169.254.169.254/latest/meta-data/instance-id || echo "unknown")
+export ELASTICSEARCH_HOST="elasticsearch:9200"
 
 cat > /opt/elk/metricbeat.yml <<MBCFG
 metricbeat.config.modules:
