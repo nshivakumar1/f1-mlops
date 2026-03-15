@@ -250,40 +250,79 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
   ```
 - After importing locally, push an empty commit to trigger a fresh plan (the old plan binary becomes stale after any state change)
 
-### 32. Kibana Dashboard Setup — Run Script After Starting ELK EC2
+### 37. Terraform `archive_file` Re-Zips Source-Only in CI Deploy Job — Lambda Loses Dependencies
 
-- `scripts/setup_kibana_dashboards.sh <kibana_url>` creates 4 visualizations + dashboard via Kibana Saved Objects API
-- Creates: pitstop probability line chart (per driver over time), top candidates bar chart, tyre age vs probability trend, safety car metric
-- Run once per ELK instance (after `docker compose up` completes): `./scripts/setup_kibana_dashboards.sh http://<elk-ip>:5601`
-- Then open: `http://<elk-ip>:5601/app/dashboards#/view/f1-race-live` — set time range to "Last 2 hours", auto-refresh 30s
+- `data "archive_file"` in Terraform re-runs during `terraform apply` in the deploy job context, which has no pip packages installed
+- Result: enrichment Lambda gets replaced with a ~9KB source-only ZIP → `No module named 'groq'` at runtime
+- **Fix:** After `terraform apply`, redeploy Lambda functions from the pre-built manylinux ZIPs in the plan artifact:
+  - ZIPs >50MB (enrichment ~80MB): upload to S3, then `aws lambda update-function-code --s3-bucket/--s3-key`
+  - ZIPs <50MB: `aws lambda update-function-code --zip-file fileb://...`
+- This step is now in `.github/workflows/ci.yml` after the `terraform apply` step
+- **Race day:** If a CI run was approved while the race is live, the Lambda will be broken for ~1 min until the redeploy step finishes — watch for `No module named 'groq'` errors in CloudWatch
+
+### 38. API Gateway `test-invoke-method` Bypasses Stage — Not a Reliable Proxy for Public URL
+
+- `aws apigateway test-invoke-method` invokes the Lambda integration directly, bypassing the stage deployment entirely
+- A route can return 200 via test-invoke but 403 `MissingAuthenticationTokenException` via the public URL if the route was never included in a stage deployment
+- **Root cause:** Routes created via `terraform import` (without a full `terraform apply`) are in AWS config but not in the deployed stage snapshot
+- **Fix:** Delete and recreate the method + integration with `put-method` + `put-integration`, then `create-deployment`
+
+### 32. ELK/Kibana — RETIRED, Use Grafana for Everything
+
+- ELK was too complex to maintain: 22KB user_data limit, Logstash config syntax, `%{` escaping, Docker boot time
+- **Decision (2026-03-15):** Migrated ALL race visualizations to Grafana
+- Grafana now has two datasources: CloudWatch (infra) + Infinity (F1 REST API → live race predictions)
+- **Live race dashboard:** `http://<grafana-ip>:3000/d/f1-race-live` — auto-refresh 30s
+- **Infra dashboard:** `http://<grafana-ip>:3000/d/f1-infra-metrics` — Lambda/SageMaker CloudWatch metrics
+- ELK EC2 (`i-09b80fc03109c35a1`) is stopped — do NOT restart it unless specifically re-evaluating ELK
+
+### 33. Grafana 12 Dashboard API — Do NOT Set `schemaVersion` or Use Wrong Auth
+
+- **Wrong:** Creating dashboards via API with `"schemaVersion": 39` — causes panels to render "No data" silently even when CloudWatch query returns data
+- **Correct:** Omit `schemaVersion` entirely when POSTing dashboards via API, or clone structure from an existing working dashboard
+- **Wrong:** CloudWatch datasource `allowed_auth_providers` default (`default,keys,credentials`) blocks `ec2_iam_role` — panels show "No data" with error `"trying to use non-allowed auth method ec2_iam_role"`
+- **Correct:** Add `allowed_auth_providers = default,keys,credentials,ec2_iam_role` to `/etc/grafana/grafana.ini` under `[aws]` section, then restart Grafana
+- CloudWatch query format requires: `"queryMode": "Metrics"`, `"statistics": ["Average"]` (array not string), `"matchExact": true`
+- EC2 basic monitoring period is 5 minutes — use `"period": "300"` not `"period": "60"`
+
+### 34. Grafana Infinity Datasource — Install Before First Race
+
+- Infinity plugin (`yesoreyeram-infinity-datasource`) is not bundled with Grafana — must be installed
+- Already installed on current Grafana EC2 (`i-09c735935e93429d5`) — persists in `/var/lib/grafana/plugins/`
+- If instance is replaced: `ssh ubuntu@<ip> "sudo grafana-cli plugins install yesoreyeram-infinity-datasource && sudo systemctl restart grafana-server"`
+- Datasource UID: `cfg1tmj8jbu2oa` (created via API, persists in Grafana DB)
+- If datasource needs recreation after instance replacement, re-POST the datasource config via Grafana API
 
 ---
 
 ## Architecture
 
 ```
-GitHub → CodePipeline → [Test → TerraformPlan → Approve → Deploy]
+GitHub → GitHub Actions → [Test → Plan → Approve → Deploy]
                               ↓
                         Lambda (enrichment, rest_handler, prewarm, slack_notifier)
                         SageMaker Serverless Endpoint
                         S3 (data + artifacts)
-                        Kinesis Firehose → ELK on EC2 (predictions + standings only)
                         CloudWatch Alarms → SNS → AWS Chatbot → Slack #f1-race-alerts
-                        CloudWatch Logs/Metrics → Grafana (Lambda, SageMaker, EC2 infra)
+                        REST API → Grafana Infinity → Live Race Dashboard
+                        CloudWatch Metrics → Grafana CloudWatch → Infra Dashboard
 ```
 
-### Observability Split
+### Observability (All in Grafana)
 
-- **ELK (Kibana):** Race domain data — pitstop predictions, driver standings, inference events from Logstash HTTP input (port 8080) and S3. Pipelines: `inference.conf`, `training.conf`.
-- **Grafana:** Infrastructure/ops metrics — Lambda duration/errors/throttles, SageMaker invocation latency, EC2 CPU/network. Uses native CloudWatch datasource (no Logstash needed).
-- **Do NOT** add `cloudwatch_logs.conf` or `cloudwatch_metrics.conf` back to `/opt/elk/logstash/pipeline/` — `logstash-input-cloudwatch_logs` is not bundled in `logstash-integration-aws` and `cloudwatch` input uses `filters` not `dimensions`.
+- **Live race data:** Grafana Infinity datasource → REST API (`/sessions/latest`) → pitstop probabilities, tyre age, safety car, AI commentary
+- **Infra/ops:** Grafana CloudWatch datasource → Lambda duration/errors/throttles, SageMaker invocation latency
+- **ELK is retired** — do not add it back
 
 ## Grafana EC2
 
 - **Instance ID:** `i-09c735935e93429d5` (t3.micro, stop between races)
 - **Login:** admin / f1mlops2026
-- **Datasource:** CloudWatch pre-provisioned via IAM role `f1-mlops-grafana-role` (CloudWatchReadOnlyAccess)
+- **Datasources:** CloudWatch (uid: `P034F075C744B399F`) + Infinity/F1 REST API (uid: `cfg1tmj8jbu2oa`)
+- **Dashboards:** `f1-race-live` (Infinity), `f1-infra-metrics` (CloudWatch)
+- **IAM role:** `f1-mlops-grafana-role` (CloudWatchReadOnlyAccess)
 - **Security group:** `sg-07794e4eb4ba20283` (port 3000 + 22)
+- **Plugins installed:** `yesoreyeram-infinity-datasource` v3.7.4
 - **Note:** No Elastic IP — get fresh IP after each start with `aws ec2 describe-instances --instance-ids i-09c735935e93429d5 --region us-east-1 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text`
 
 ## Key File Paths
@@ -319,16 +358,19 @@ GitHub → CodePipeline → [Test → TerraformPlan → Approve → Deploy]
 
 ## Race Day Checklist
 
-1. Start ELK EC2: `aws ec2 start-instances --instance-ids i-05e4b8ddbcce9647d --region us-east-1`
-2. Start Grafana EC2: `aws ec2 start-instances --instance-ids i-09c735935e93429d5 --region us-east-1`
-3. Get ELK IP: `aws ec2 describe-instances --instance-ids i-05e4b8ddbcce9647d --region us-east-1 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text`
-4. Get Grafana IP: `aws ec2 describe-instances --instance-ids i-09c735935e93429d5 --region us-east-1 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text`
-5. Setup Kibana dashboards (first race or new instance): `./scripts/setup_kibana_dashboards.sh http://<elk-ip>:5601`
-6. Verify Lambda `GEMINI_SECRET_NAME` env var is set: `aws lambda get-function-configuration --function-name f1-mlops-enrichment --region us-east-1 --query 'Environment'`
-7. Enable live poller 30 min before lights out: `aws events enable-rule --name f1-mlops-live-poller --region us-east-1`
-8. Verify predictions flowing ~5 min after enabling (check S3 or REST API)
-9. Disable after session: `aws events disable-rule --name f1-mlops-live-poller --region us-east-1`
-10. Stop both EC2s to save cost: `aws ec2 stop-instances --instance-ids i-05e4b8ddbcce9647d i-09c735935e93429d5 --region us-east-1`
+> **Note:** ELK/Kibana is RETIRED. All visualizations are now in Grafana (Infinity datasource → REST API).
+> ELK EC2 (`i-09b80fc03109c35a1`) is stopped and no longer part of race day workflow.
+
+1. Start Grafana EC2: `aws ec2 start-instances --instance-ids i-09c735935e93429d5 --region us-east-1`
+2. Get Grafana IP: `aws ec2 describe-instances --instance-ids i-09c735935e93429d5 --region us-east-1 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text`
+3. Open Grafana: `http://<grafana-ip>:3000` — admin / f1mlops2026
+   - **Live race dashboard:** `/d/f1-race-live` — auto-refreshes every 30s, shows pitstop probabilities + AI commentary
+   - **Infrastructure dashboard:** `/d/f1-infra-metrics` — Lambda/SageMaker CloudWatch metrics
+4. Verify Lambda `GEMINI_SECRET_NAME` env var is set: `aws lambda get-function-configuration --function-name f1-mlops-enrichment --region us-east-1 --query 'Environment'`
+5. Enable live poller 30 min before lights out: `aws events enable-rule --name f1-mlops-live-poller --region us-east-1`
+6. Verify predictions flowing ~5 min after enabling (check S3 or Grafana `/d/f1-race-live`)
+7. Disable after session: `aws events disable-rule --name f1-mlops-live-poller --region us-east-1`
+8. Stop Grafana EC2: `aws ec2 stop-instances --instance-ids i-09c735935e93429d5 --region us-east-1`
 
 ## Current State (as of 2026-03-15)
 
@@ -338,6 +380,8 @@ GitHub → CodePipeline → [Test → TerraformPlan → Approve → Deploy]
 - **Groq API key:** Stored in `f1-mlops/gemini-api-key` secret as plain string `gsk_...`
 - **CodePipeline:** TerraformPlan grok `%%{` fix pushed — needs manual Approve after plan passes to sync Terraform state with manually-deployed Lambdas
 - **Frontend:** Deployed on Vercel, Root Directory = `frontend`, branding = Groq/Llama 3.3
-- **ELK EC2 (`i-05e4b8ddbcce9647d`):** Stopped
-- **Grafana EC2 (`i-09c735935e93429d5`):** Stopped
+- **ELK EC2 (`i-09b80fc03109c35a1`):** STOPPED — retired, replaced by Grafana
+- **Grafana EC2 (`i-09c735935e93429d5`):** Running at `98.91.186.24`
+  - Datasources: CloudWatch (infra) + Infinity (F1 REST API → live race data)
+  - Dashboards: `f1-race-live` (pitstop probabilities, tyre age, AI commentary) + `f1-infra-metrics`
 - **SageMaker endpoint:** InService (serverless)
