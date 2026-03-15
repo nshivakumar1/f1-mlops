@@ -27,17 +27,19 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   ok_actions          = [aws_sns_topic.f1_alerts.arn]
 }
 
-# Alarm 2: SageMaker cold start latency > 3s (P3)
+# Alarm 2: SageMaker cold start latency > 15s p99 sustained (P3)
+# Serverless cold starts are normally 5-15s — only alert if p99 exceeds 15s for 3 consecutive minutes
 resource "aws_cloudwatch_metric_alarm" "sagemaker_latency" {
   alarm_name          = "${var.project}-sagemaker-cold-start"
-  alarm_description   = "SageMaker serverless cold start > 3000ms"
+  alarm_description   = "SageMaker serverless p99 latency > 15000ms for 3 consecutive periods"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 1
+  evaluation_periods  = 3
+  datapoints_to_alarm = 3
   metric_name         = "ModelLatency"
   namespace           = "AWS/SageMaker"
   period              = 60
   extended_statistic  = "p99"
-  threshold           = 3000
+  threshold           = 15000
   treat_missing_data  = "notBreaching"
   dimensions          = { EndpointName = var.sagemaker_endpoint, VariantName = "dry-race-v1" }
   alarm_actions       = [aws_sns_topic.f1_alerts.arn]
