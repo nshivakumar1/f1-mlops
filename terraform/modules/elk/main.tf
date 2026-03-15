@@ -96,6 +96,19 @@ resource "aws_key_pair" "elk" {
   public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDE2Fc4w7XpMogqNzEQDWxX+yAn4XcpxDt18SLkuE8FCKEjPXuWDI/WiUJkFZWw5NeWu29o7App/CwvwPAO5c0VvzXRib3aE4HCGRSzZ6XmFuVOM3Ae1OZ2QaritySd14m9hqSFpjdwaMktS/GyeneN2sITzMUqVhVNSNUKVY1SlmB86fvjzbLOIrbO8E8lhcygTSVRljwaa+xoqmIR/0zUBhFo4343nzEfYTqF8WSNxS/YGYOTc87YDZHIhKGaSNcsDmx2DxAwPao201bhhpHnI2sME8oi/Hv2Sm2ThHM49+48TnNs1omoqmWgenqtvGWAu1SNS+66wV/UMv/bUdB5NEh4xn1Mo8xsCnwH67IGC9gSZm+cJKGfTTrezV8m48J8DAzctPllBvBgShkS3fKogtKvhKWLA6I1m+m1Mt6fDVbzsMg1qNAqGu68aeDpLnHaO5zLK8QWtrzDVuT9KPwvlQkprhKztMQyk4zEL7tGpCgRppezUaD0W1hp6uxDovt2p0vl9PlNasG0yjnKRfKQBQ0ZC1xgtIYPIfMJJBn2ndS7LSj8ptHQaRbLULrk4r3+BU2G3twLnsBqvxtyBagTJYFDhHGAbwZbciaBSEg7jYuZI95Ik/CiFCi5PyldETR/338eueHBdcMoLKl7n5eIIu+S1pW9jkvKUZySibHrdw== nakulshivakumar@Nakuls-MacBook-Air.local"
 }
 
+# Upload rendered setup script to S3 — EC2 user_data is limited to 16 KB
+# but elk_setup.sh.tpl is ~22 KB, so we store it in S3 and bootstrap from there.
+resource "aws_s3_object" "elk_setup" {
+  bucket       = var.s3_bucket
+  key          = "scripts/elk_setup.sh"
+  content_type = "text/x-shellscript"
+  content = templatefile("${path.module}/templates/elk_setup.sh.tpl", {
+    s3_bucket  = var.s3_bucket
+    aws_region = var.aws_region
+    project    = var.project
+  })
+}
+
 resource "aws_instance" "elk" {
   ami                    = data.aws_ami.ubuntu.id
   instance_type          = "t3.medium"
@@ -109,11 +122,20 @@ resource "aws_instance" "elk" {
     tags        = { Name = "${var.project}-elk-root" }
   }
 
-  user_data = templatefile("${path.module}/templates/elk_setup.sh.tpl", {
-    s3_bucket  = var.s3_bucket
-    aws_region = var.aws_region
-    project    = var.project
-  })
+  # Minimal bootstrapper — downloads the full setup script from S3 and runs it.
+  # The full script is stored as scripts/elk_setup.sh in the data bucket.
+  user_data = <<-EOF
+    #!/bin/bash
+    set -euo pipefail
+    exec > /var/log/elk-bootstrap.log 2>&1
+    echo "Downloading ELK setup script from S3..."
+    aws s3 cp s3://${var.s3_bucket}/scripts/elk_setup.sh /tmp/elk_setup.sh \
+      --region ${var.aws_region}
+    chmod +x /tmp/elk_setup.sh
+    bash /tmp/elk_setup.sh
+  EOF
+
+  depends_on = [aws_s3_object.elk_setup]
 
   tags = { Name = "${var.project}-elk" }
 }

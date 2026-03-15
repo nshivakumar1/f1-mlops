@@ -101,6 +101,7 @@ jobs:
 
       - name: Terraform plan
         run: |
+          set -o pipefail
           terraform plan -input=false -out=tfplan.binary 2>&1 | tee plan_output.txt
           terraform show -json tfplan.binary > tfplan.json
         working-directory: ${{ env.TF_WORKING_DIR }}
