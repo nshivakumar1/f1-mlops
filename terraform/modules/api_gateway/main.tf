@@ -118,13 +118,27 @@ resource "aws_api_gateway_integration" "sessions_latest_get" {
 
 # Deployment + stage with 5-min cache
 resource "aws_api_gateway_deployment" "f1" {
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+
+  triggers = {
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_integration.pitstop_post,
+      aws_api_gateway_integration.positions_get,
+      aws_api_gateway_integration.sessions_get,
+      aws_api_gateway_integration.sessions_latest_get,
+    ]))
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
   depends_on = [
     aws_api_gateway_integration.pitstop_post,
     aws_api_gateway_integration.positions_get,
     aws_api_gateway_integration.sessions_get,
     aws_api_gateway_integration.sessions_latest_get,
   ]
-  rest_api_id = aws_api_gateway_rest_api.f1.id
 }
 
 resource "aws_api_gateway_stage" "v1" {

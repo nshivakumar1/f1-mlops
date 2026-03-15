@@ -30,7 +30,7 @@ resource "aws_lambda_function" "enrichment" {
   handler          = "handler.lambda_handler"
   runtime          = "python3.12"
   memory_size      = 512
-  timeout          = 30
+  timeout          = 60
   role             = var.lambda_role_arn
 
   environment {
@@ -39,7 +39,6 @@ resource "aws_lambda_function" "enrichment" {
       SAGEMAKER_ENDPOINT = var.sagemaker_endpoint
       SNS_TOPIC_ARN      = var.sns_topic_arn
       AWS_REGION_NAME    = var.aws_region
-      LOGSTASH_ENDPOINT  = var.logstash_url
       GEMINI_SECRET_NAME = "f1-mlops/gemini-api-key"
     }
   }

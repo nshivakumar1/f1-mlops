@@ -53,7 +53,6 @@ module "lambda" {
   s3_bucket          = module.s3.data_bucket_name
   sagemaker_endpoint = module.sagemaker.endpoint_name
   sns_topic_arn      = module.cloudwatch.sns_topic_arn
-  logstash_url       = module.elk.logstash_url
 }
 
 module "eventbridge" {
