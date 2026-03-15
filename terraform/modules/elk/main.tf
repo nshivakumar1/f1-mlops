@@ -128,6 +128,9 @@ resource "aws_instance" "elk" {
     #!/bin/bash
     set -euo pipefail
     exec > /var/log/elk-bootstrap.log 2>&1
+    echo "Installing AWS CLI..."
+    apt-get update -qq
+    apt-get install -y -qq awscli
     echo "Downloading ELK setup script from S3..."
     aws s3 cp s3://${var.s3_bucket}/scripts/elk_setup.sh /tmp/elk_setup.sh \
       --region ${var.aws_region}
