@@ -166,6 +166,57 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - **Prevention:** After identifying a fix, apply it immediately before moving on to the next investigation
 - **Recovery:** Check CLAUDE.md "Pending Tasks" and git log to reconstruct what was done vs what was pending
 
+### 26. Logstash Grok Patterns in `.tpl` Files — All `%{` Must Be Escaped
+
+- `elk_setup.sh.tpl` line 323–327 had Logstash grok patterns: `%{DATA:request_id}`, `%{NUMBER:...}`, `%{GREEDYDATA:...}`
+- These are also interpreted as Terraform template directives — same `%%{` escape required
+- **Fix applied:** All grok patterns now use `%%{DATA:...}`, `%%{NUMBER:...}`, `%%{GREEDYDATA:...}`
+- **Rule:** Every `%{` in any `.tpl` file must be doubled to `%%{` regardless of context
+
+### 27. Lambda Deployment Packages — Must Build for Linux (manylinux), Not macOS
+
+- `pip install` on macOS (arm64/x86) produces macOS-specific `.so` binaries (e.g. gRPC `cygrpc`)
+- Lambda runs on Amazon Linux 2 (x86_64) — macOS binaries cause `Runtime.ImportModuleError`
+- **Wrong:** `pip install -r requirements.txt -t build/` on macOS
+- **Correct:** `pip install --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 --only-binary=:all: -r requirements.txt -t build/`
+- Packages >50MB must be uploaded via S3, not direct ZIP (`RequestEntityTooLargeException`)
+- Lambda ZIPs for enrichment are ~80MB → always use: `aws s3 cp enrichment.zip s3://BUCKET/lambda-deployments/enrichment.zip` then `--s3-bucket/--s3-key`
+
+### 28. Gemini API — `limit: 0` Means Billing Project Issue, Not Exhausted Quota
+
+- Free tier `limit: 0` on `gemini-2.0-flash` and `gemini-2.5-pro` means the Google Cloud project has billing enabled, disabling free-tier quotas, but paid-tier quota is also unconfigured
+- Google One AI Premium subscription does NOT automatically give developer API access
+- **Fix:** Either create a new GCP project without billing (free tier: 1,500 req/day), or configure paid-tier quota in Cloud Console
+- **Resolution:** Switched to Groq (free, no card required) — `gsk_*` key stored in `f1-mlops/gemini-api-key` secret
+
+### 29. AI Commentary — Groq (Llama 3.3 70B), Secret Stores Groq Key
+
+- Model: `llama-3.3-70b-versatile` via `groq>=0.11.0` SDK
+- Secret name still `f1-mlops/gemini-api-key` (not renamed to avoid Terraform changes)
+- Lambda env var: `GEMINI_SECRET_NAME=f1-mlops/gemini-api-key`
+- Secret format: plain string `gsk_...` (code handles both plain and `{"api_key":"..."}` JSON)
+- Free tier: 14,400 req/day, 30 req/min — well within 1 req/30s race day usage
+
+### 30. CodePipeline Does NOT Auto-Deploy Lambda Code — Manual Deploy Required
+
+- TerraformPlan stage was failing (grok `%%{` fix only just pushed), so Lambda code from `lambda/` directory was never deployed via pipeline
+- Manually deployed: `f1-mlops-enrichment` (Groq), `f1-mlops-rest-handler` (commentary field), `f1-mlops-slack-notifier` (AI label)
+- After pipeline is fixed and Approve stage is clicked, Terraform will re-deploy from ZIPs — ensure `GEMINI_SECRET_NAME` env var is in `terraform/modules/lambda/main.tf`
+- **Race day:** Always verify Lambda `LastModified` timestamps match expected deploy dates before enabling the poller
+
+### 31. Vercel Deployment — `rootDirectory` Not Valid in `vercel.json`
+
+- `vercel.json` does not accept `rootDirectory` property — schema validation fails
+- **Correct:** Set Root Directory to `frontend` in Vercel dashboard → Project → Settings → General
+- `vercel.json` at repo root should only contain valid properties (e.g. `framework`)
+
+### 32. Kibana Dashboard Setup — Run Script After Starting ELK EC2
+
+- `scripts/setup_kibana_dashboards.sh <kibana_url>` creates 4 visualizations + dashboard via Kibana Saved Objects API
+- Creates: pitstop probability line chart (per driver over time), top candidates bar chart, tyre age vs probability trend, safety car metric
+- Run once per ELK instance (after `docker compose up` completes): `./scripts/setup_kibana_dashboards.sh http://<elk-ip>:5601`
+- Then open: `http://<elk-ip>:5601/app/dashboards#/view/f1-race-live` — set time range to "Last 2 hours", auto-refresh 30s
+
 ---
 
 ## Architecture
@@ -205,20 +256,18 @@ GitHub → CodePipeline → [Test → TerraformPlan → Approve → Deploy]
 
 ## Post-Race Build Plan
 
-### Gemini 2.5 Pro — Race Commentary Layer
-- **API key:** stored at `arn:aws:secretsmanager:us-east-1:297997106614:secret:f1-mlops/gemini-api-key-GKgHqf`
-- **Secret name:** `f1-mlops/gemini-api-key`
-- **Model:** `gemini-2.5-pro` (user has Google One AI Premium subscription)
-- **Use:** Generate 2-sentence live race strategy commentary per lap, added to enrichment Lambda output
-- **Lambda IAM:** Must add `secretsmanager:GetSecretValue` permission for `f1-mlops/gemini-api-key`
-- **Python package:** `google-generativeai` — add to `lambda/enrichment/requirements.txt`
+### AI Commentary — COMPLETE (Groq, not Gemini)
+- **Secret name:** `f1-mlops/gemini-api-key` (stores Groq key `gsk_...`, not renamed to avoid Terraform changes)
+- **Model:** `llama-3.3-70b-versatile` via `groq>=0.11.0`
+- **Client file:** `lambda/enrichment/gemini_client.py`
+- **Status:** DEPLOYED and working
 
-### Frontend (Next.js → Vercel)
+### Frontend (Next.js → Vercel) — COMPLETE
 - 3 pages: Live predictions, Race history, About/architecture
+- Root Directory set to `frontend` in Vercel dashboard
 - Polls API Gateway every 30s during race
-- Displays pitstop probability per driver + Gemini commentary card
-- History page: predicted pitstop lap vs actual (accuracy metric)
-- Build after Chinese GP when real race data is available
+- Displays pitstop probability per driver + AI commentary card (Groq)
+- Race map: SVG-based circuit map from OpenF1 `/v1/position` data, polls every 5s
 
 ### Race Outcome Model (XGBoost)
 - Separate model from pitstop predictor
@@ -229,8 +278,26 @@ GitHub → CodePipeline → [Test → TerraformPlan → Approve → Deploy]
 ---
 
 ## Race Day Checklist
-1. Start EC2: `aws ec2 start-instances --instance-ids i-05e4b8ddbcce9647d --region us-east-1`
-2. Get new IP: `aws ec2 describe-instances --instance-ids i-05e4b8ddbcce9647d --region us-east-1 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text`
-3. Update `logstash_url` Terraform variable with new IP
-4. Enable live poller 30 min before session: `aws events enable-rule --name f1-mlops-live-poller --region us-east-1`
-5. Disable after session: `aws events disable-rule --name f1-mlops-live-poller --region us-east-1`
+
+1. Start ELK EC2: `aws ec2 start-instances --instance-ids i-05e4b8ddbcce9647d --region us-east-1`
+2. Start Grafana EC2: `aws ec2 start-instances --instance-ids i-09c735935e93429d5 --region us-east-1`
+3. Get ELK IP: `aws ec2 describe-instances --instance-ids i-05e4b8ddbcce9647d --region us-east-1 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text`
+4. Get Grafana IP: `aws ec2 describe-instances --instance-ids i-09c735935e93429d5 --region us-east-1 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text`
+5. Setup Kibana dashboards (first race or new instance): `./scripts/setup_kibana_dashboards.sh http://<elk-ip>:5601`
+6. Verify Lambda `GEMINI_SECRET_NAME` env var is set: `aws lambda get-function-configuration --function-name f1-mlops-enrichment --region us-east-1 --query 'Environment'`
+7. Enable live poller 30 min before lights out: `aws events enable-rule --name f1-mlops-live-poller --region us-east-1`
+8. Verify predictions flowing ~5 min after enabling (check S3 or REST API)
+9. Disable after session: `aws events disable-rule --name f1-mlops-live-poller --region us-east-1`
+10. Stop both EC2s to save cost: `aws ec2 stop-instances --instance-ids i-05e4b8ddbcce9647d i-09c735935e93429d5 --region us-east-1`
+
+## Current State (as of 2026-03-15)
+
+- **Enrichment Lambda:** Deployed with Groq commentary (manually via S3, March 14)
+- **REST handler:** Deployed with `commentary` field in response (manually, March 14)
+- **Slack notifier:** Deployed with "AI Strategy Insight" label (manually, March 14)
+- **Groq API key:** Stored in `f1-mlops/gemini-api-key` secret as plain string `gsk_...`
+- **CodePipeline:** TerraformPlan grok `%%{` fix pushed — needs manual Approve after plan passes to sync Terraform state with manually-deployed Lambdas
+- **Frontend:** Deployed on Vercel, Root Directory = `frontend`, branding = Groq/Llama 3.3
+- **ELK EC2 (`i-05e4b8ddbcce9647d`):** Stopped
+- **Grafana EC2 (`i-09c735935e93429d5`):** Stopped
+- **SageMaker endpoint:** InService (serverless)
