@@ -116,6 +116,66 @@ resource "aws_api_gateway_integration" "sessions_latest_get" {
   uri                     = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${var.rest_handler_arn}/invocations"
 }
 
+# /positions/latest — GET (live driver positions proxied from OpenF1)
+resource "aws_api_gateway_resource" "positions_latest" {
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+  parent_id   = aws_api_gateway_rest_api.f1.root_resource_id
+  path_part   = "positions"
+}
+
+resource "aws_api_gateway_resource" "positions_latest_path" {
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+  parent_id   = aws_api_gateway_resource.positions_latest.id
+  path_part   = "latest"
+}
+
+resource "aws_api_gateway_method" "positions_latest_get" {
+  rest_api_id      = aws_api_gateway_rest_api.f1.id
+  resource_id      = aws_api_gateway_resource.positions_latest_path.id
+  http_method      = "GET"
+  authorization    = "NONE"
+  api_key_required = false
+}
+
+resource "aws_api_gateway_integration" "positions_latest_get" {
+  rest_api_id             = aws_api_gateway_rest_api.f1.id
+  resource_id             = aws_api_gateway_resource.positions_latest_path.id
+  http_method             = aws_api_gateway_method.positions_latest_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${var.rest_handler_arn}/invocations"
+}
+
+# /track/{circuit_key} — GET (static circuit outline from Multiviewer)
+resource "aws_api_gateway_resource" "track" {
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+  parent_id   = aws_api_gateway_rest_api.f1.root_resource_id
+  path_part   = "track"
+}
+
+resource "aws_api_gateway_resource" "track_circuit" {
+  rest_api_id = aws_api_gateway_rest_api.f1.id
+  parent_id   = aws_api_gateway_resource.track.id
+  path_part   = "{circuit_key}"
+}
+
+resource "aws_api_gateway_method" "track_get" {
+  rest_api_id      = aws_api_gateway_rest_api.f1.id
+  resource_id      = aws_api_gateway_resource.track_circuit.id
+  http_method      = "GET"
+  authorization    = "NONE"
+  api_key_required = false
+}
+
+resource "aws_api_gateway_integration" "track_get" {
+  rest_api_id             = aws_api_gateway_rest_api.f1.id
+  resource_id             = aws_api_gateway_resource.track_circuit.id
+  http_method             = aws_api_gateway_method.track_get.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = "arn:aws:apigateway:${var.aws_region}:lambda:path/2015-03-31/functions/${var.rest_handler_arn}/invocations"
+}
+
 # Deployment + stage with 5-min cache
 resource "aws_api_gateway_deployment" "f1" {
   rest_api_id = aws_api_gateway_rest_api.f1.id
@@ -126,6 +186,8 @@ resource "aws_api_gateway_deployment" "f1" {
       aws_api_gateway_integration.positions_get,
       aws_api_gateway_integration.sessions_get,
       aws_api_gateway_integration.sessions_latest_get,
+      aws_api_gateway_integration.positions_latest_get,
+      aws_api_gateway_integration.track_get,
     ]))
   }
 
@@ -138,6 +200,8 @@ resource "aws_api_gateway_deployment" "f1" {
     aws_api_gateway_integration.positions_get,
     aws_api_gateway_integration.sessions_get,
     aws_api_gateway_integration.sessions_latest_get,
+    aws_api_gateway_integration.positions_latest_get,
+    aws_api_gateway_integration.track_get,
   ]
 }
 

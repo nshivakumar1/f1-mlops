@@ -2,11 +2,15 @@
 Lambda REST Handler — serves API Gateway requests
   POST /predict/pitstop    — on-demand pitstop prediction for a single driver
   GET  /predict/positions/{session_key} — cached race position predictions
+  GET  /positions/latest   — live driver positions proxied from OpenF1
+  GET  /track/{circuit_key} — static circuit track layout from Multiviewer
 """
 import json
 import os
 import boto3
 import logging
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 
 logger = logging.getLogger()
@@ -173,6 +177,76 @@ def handle_latest_session() -> dict:
         return _response(500, {"error": "Internal server error"})
 
 
+def handle_live_positions() -> dict:
+    """GET /positions/latest — proxy OpenF1 live positions server-side."""
+    try:
+        # Get current session key from latest S3 prediction
+        result = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix="logs/inference/")
+        objects = result.get("Contents", [])
+        session_key = "latest"
+        if objects:
+            latest_obj = sorted(objects, key=lambda x: x["LastModified"], reverse=True)[0]
+            parts = latest_obj["Key"].split("/")
+            session_part = next((p for p in parts if p.startswith("session_")), None)
+            if session_part:
+                key = session_part.replace("session_", "")
+                if key.isdigit():
+                    session_key = key
+
+        since = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        url = f"https://api.openf1.org/v1/position?session_key={session_key}&date>={since}"
+        req = urllib.request.Request(url, headers={"User-Agent": "f1-mlops/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode())
+
+        if not isinstance(data, list):
+            return _response(200, {"session_key": session_key, "positions": []})
+
+        # Keep only the latest position per driver
+        latest = {}
+        for p in data:
+            num = p.get("driver_number")
+            if num and (num not in latest or p.get("date", "") > latest[num].get("date", "")):
+                latest[num] = {"driver_number": num, "x": p.get("x", 0), "y": p.get("y", 0), "date": p.get("date", "")}
+
+        return _response(200, {"session_key": session_key, "positions": list(latest.values())})
+    except urllib.error.HTTPError as e:
+        logger.warning(f"OpenF1 positions HTTP {e.code}")
+        return _response(200, {"session_key": session_key if "session_key" in dir() else "unknown", "positions": []})
+    except Exception as e:
+        logger.error(f"Error fetching live positions: {e}")
+        return _response(200, {"positions": []})
+
+
+def handle_track_layout(circuit_key: str) -> dict:
+    """GET /track/{circuit_key} — proxy Multiviewer static circuit outline."""
+    try:
+        # Default to Melbourne (Australian GP) if no key provided
+        key = circuit_key if circuit_key and circuit_key.isdigit() else "10"
+        # Try years in reverse order to find available data
+        for year in [2026, 2025, 2024, 2023, 2022, 2019]:
+            url = f"https://api.multiviewer.app/api/v1/circuits/{key}/{year}"
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "f1-mlops/1.0"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    data = json.loads(resp.read().decode())
+                if data.get("x"):
+                    return _response(200, {
+                        "circuit_key": key,
+                        "circuit_name": data.get("circuitName", ""),
+                        "year": year,
+                        "rotation": data.get("rotation", 0),
+                        "x": data["x"],
+                        "y": data["y"],
+                    })
+            except Exception:
+                continue
+        return _response(404, {"error": f"No track layout found for circuit {key}"})
+    except Exception as e:
+        logger.error(f"Error fetching track layout: {e}")
+        return _response(500, {"error": "Internal server error"})
+
+
 def lambda_handler(event, context):
     method = event.get("httpMethod", "")
     path = event.get("path", "")
@@ -196,5 +270,12 @@ def lambda_handler(event, context):
     elif method == "GET" and "/predict/positions/" in path:
         session_key = path_params.get("session_key") or path.split("/")[-1]
         return handle_positions_get(session_key)
+
+    elif method == "GET" and "/positions/latest" in path:
+        return handle_live_positions()
+
+    elif method == "GET" and "/track/" in path:
+        circuit_key = path_params.get("circuit_key") or path.split("/")[-1]
+        return handle_track_layout(circuit_key)
 
     return _response(404, {"error": f"Route not found: {method} {path}"})

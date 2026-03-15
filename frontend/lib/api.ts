@@ -75,30 +75,34 @@ export interface DriverPosition {
   date: string;
 }
 
-export async function fetchDriverPositions(sessionKey: string): Promise<DriverPosition[]> {
-  const since = new Date(Date.now() - 30000).toISOString();
+// Fetch live driver positions via our REST API (proxies OpenF1 server-side)
+export async function fetchDriverPositions(_sessionKey: string): Promise<DriverPosition[]> {
   try {
-    const res = await fetch(
-      `https://api.openf1.org/v1/position?session_key=${sessionKey}&date>=${since}`,
-      { cache: "no-store" }
-    );
+    const res = await fetch(`${API_URL}/positions/latest`, { cache: "no-store" });
     if (!res.ok) return [];
-    const data: any[] = await res.json();
-    if (!Array.isArray(data)) return [];
-    const latest = new Map<number, DriverPosition>();
-    for (const p of data) {
-      const existing = latest.get(p.driver_number);
-      if (!existing || p.date > existing.date) {
-        latest.set(p.driver_number, {
-          driver_number: p.driver_number,
-          x: p.x,
-          y: p.y,
-          date: p.date,
-        });
-      }
-    }
-    return Array.from(latest.values());
+    const data = await res.json();
+    return (data.positions || []) as DriverPosition[];
   } catch {
     return [];
+  }
+}
+
+export interface TrackLayout {
+  circuit_key: string;
+  circuit_name: string;
+  year: number;
+  rotation: number;
+  x: number[];
+  y: number[];
+}
+
+// Fetch static circuit track outline from Multiviewer (via our REST API)
+export async function fetchTrackLayout(circuitKey = "10"): Promise<TrackLayout | null> {
+  try {
+    const res = await fetch(`${API_URL}/track/${circuitKey}`, { cache: "force-cache" });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
   }
 }

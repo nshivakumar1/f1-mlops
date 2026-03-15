@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
-import { fetchLatestSession, fetchDriverPositions, getTeamColor, getTyreColor, type SessionData, type DriverPosition } from "@/lib/api";
+import { useEffect, useState, useCallback } from "react";
+import { fetchLatestSession, fetchDriverPositions, fetchTrackLayout, getTeamColor, getTyreColor, type SessionData, type DriverPosition, type TrackLayout } from "@/lib/api";
 
 const REFRESH_INTERVAL = 30_000;
 
@@ -52,46 +52,32 @@ const MAP_W = 700;
 const MAP_H = 400;
 const MAP_PAD = 30;
 
-function RaceMap({ sessionKey, predictions }: { sessionKey: string; predictions: SessionData["predictions"] }) {
+function RaceMap({ predictions }: { predictions: SessionData["predictions"] }) {
+  const [track, setTrack] = useState<TrackLayout | null>(null);
   const [driverPositions, setDriverPositions] = useState<Map<number, { x: number; y: number }>>(new Map());
-  const trackPointsRef = useRef<{ x: number; y: number }[]>([]);
-  const [bounds, setBounds] = useState<{ minX: number; maxX: number; minY: number; maxY: number } | null>(null);
-  const [trackSnapshot, setTrackSnapshot] = useState<{ x: number; y: number }[]>([]);
-  // Skip map polling if session_key isn't a real numeric key (OpenF1 fallback)
-  const isValidSession = sessionKey && /^\d+$/.test(sessionKey);
 
+  // Load static circuit outline once on mount (Melbourne / Australian GP circuit key 10)
   useEffect(() => {
-    if (!isValidSession) return;
+    fetchTrackLayout("10").then((t) => { if (t) setTrack(t); });
+  }, []);
+
+  // Poll live driver positions every 5s via our REST API proxy
+  useEffect(() => {
     const poll = async () => {
-      const data: DriverPosition[] = await fetchDriverPositions(sessionKey);
+      const data: DriverPosition[] = await fetchDriverPositions("");
       if (data.length === 0) return;
-
-      const newPos = new Map<number, { x: number; y: number }>();
-      for (const d of data) newPos.set(d.driver_number, { x: d.x, y: d.y });
-      setDriverPositions(newPos);
-
-      const incoming = data.map((d) => ({ x: d.x, y: d.y }));
-      const seen = new Set(trackPointsRef.current.map((p) => `${Math.round(p.x / 10)},${Math.round(p.y / 10)}`));
-      const fresh = incoming.filter((p) => {
-        const k = `${Math.round(p.x / 10)},${Math.round(p.y / 10)}`;
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
-      if (fresh.length > 0) {
-        trackPointsRef.current = [...trackPointsRef.current, ...fresh];
-        const pts = trackPointsRef.current;
-        const xs = pts.map((p) => p.x);
-        const ys = pts.map((p) => p.y);
-        setBounds({ minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) });
-        setTrackSnapshot([...pts]);
-      }
+      const m = new Map<number, { x: number; y: number }>();
+      for (const d of data) m.set(d.driver_number, { x: d.x, y: d.y });
+      setDriverPositions(m);
     };
-
     poll();
     const t = setInterval(poll, 5000);
     return () => clearInterval(t);
-  }, [sessionKey]);
+  }, []);
+
+  const bounds = track
+    ? { minX: Math.min(...track.x), maxX: Math.max(...track.x), minY: Math.min(...track.y), maxY: Math.max(...track.y) }
+    : null;
 
   const toSVG = (x: number, y: number) => {
     if (!bounds) return { sx: MAP_PAD, sy: MAP_PAD };
@@ -107,12 +93,16 @@ function RaceMap({ sessionKey, predictions }: { sessionKey: string; predictions:
 
   return (
     <div className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-4">
-      <div className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Live Circuit Map</div>
+      <div className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+        Live Circuit Map{track ? ` — ${track.circuit_name} ${track.year}` : ""}
+      </div>
       <svg width="100%" viewBox={`0 0 ${MAP_W} ${MAP_H}`} className="w-full">
-        {bounds && trackSnapshot.map((p, i) => {
-          const { sx, sy } = toSVG(p.x, p.y);
-          return <circle key={i} cx={sx} cy={sy} r={1.5} fill="#333" />;
+        {/* Static track outline from Multiviewer */}
+        {bounds && track && track.x.map((px, i) => {
+          const { sx, sy } = toSVG(px, track.y[i]);
+          return <circle key={i} cx={sx} cy={sy} r={2} fill="#333" />;
         })}
+        {/* Live driver positions */}
         {bounds && Array.from(driverPositions.entries()).map(([num, pos]) => {
           const { sx, sy } = toSVG(pos.x, pos.y);
           const color = colorMap[num] || "#888";
@@ -124,11 +114,9 @@ function RaceMap({ sessionKey, predictions }: { sessionKey: string; predictions:
           );
         })}
       </svg>
-      {!isValidSession && (
-        <div className="text-center text-gray-600 text-xs py-6">Circuit map unavailable — OpenF1 position API overloaded during race</div>
-      )}
-      {isValidSession && driverPositions.size === 0 && (
-        <div className="text-center text-gray-600 text-xs py-6">Waiting for position data…</div>
+      {!track && <div className="text-center text-gray-600 text-xs py-4">Loading circuit…</div>}
+      {track && driverPositions.size === 0 && (
+        <div className="text-center text-gray-600 text-xs pt-2">Positions unavailable — OpenF1 API recovering</div>
       )}
     </div>
   );
@@ -204,7 +192,7 @@ export default function LivePage() {
               <p className="text-sm text-gray-200 leading-relaxed italic">{data.commentary}</p>
             </div>
           )}
-          <RaceMap sessionKey={data.session_key} predictions={data.predictions} />
+          <RaceMap predictions={data.predictions} />
           <div className="space-y-3">
             {data.predictions.map((p, i) => <DriverCard key={p.driver_number} p={p} rank={i + 1} />)}
           </div>
