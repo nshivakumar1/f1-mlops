@@ -41,6 +41,35 @@ sns = boto3.client("sns", region_name=AWS_REGION)
 # Module-level fallback: last successful prediction batch (survives warm invocations)
 _last_good_predictions: dict = {}   # session_key → list of prediction dicts
 
+TYRE_CACHE_PREFIX = "tyre_cache"
+
+
+def save_tyre_cache(session_key: str, stints_by_driver: dict):
+    """Persist latest stint data to S3 so it survives OpenF1 outages."""
+    try:
+        s3.put_object(
+            Bucket=S3_BUCKET,
+            Key=f"{TYRE_CACHE_PREFIX}/{session_key}.json",
+            Body=json.dumps(stints_by_driver),
+            ContentType="application/json",
+        )
+    except Exception as e:
+        logger.warning(f"Failed to save tyre cache: {e}")
+
+
+def load_tyre_cache(session_key: str) -> dict:
+    """Load last known stint data from S3. Returns empty dict if not found."""
+    try:
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=f"{TYRE_CACHE_PREFIX}/{session_key}.json")
+        # S3 keys are strings; convert back to int for driver_number lookups
+        raw = json.loads(obj["Body"].read().decode())
+        return {int(k): v for k, v in raw.items()}
+    except s3.exceptions.NoSuchKey:
+        return {}
+    except Exception as e:
+        logger.warning(f"Failed to load tyre cache: {e}")
+        return {}
+
 
 def invoke_pitstop_model_batch(feature_vectors: list) -> list:
     """
@@ -197,6 +226,20 @@ def lambda_handler(event, context):
         }
 
     session_data["session_key"] = session_key
+
+    # ── 2b. Tyre data fallback cache ─────────────────────────────────────────
+    # OpenF1 /stints returns 502/empty during heavy load (seen during Australian GP).
+    # Save stints to S3 on every successful fetch; restore from cache when empty.
+    if session_data["stints"]:
+        save_tyre_cache(session_key, session_data["stints"])
+    else:
+        cached_stints = load_tyre_cache(session_key)
+        if cached_stints:
+            session_data["stints"] = cached_stints
+            logger.warning(f"OpenF1 stints empty — restored tyre data for {len(cached_stints)} drivers from S3 cache")
+        else:
+            logger.warning("OpenF1 stints empty and no S3 cache found — tyre data will be UNKNOWN")
+
     safety_car_active = check_safety_car(session_data)
 
     # ── 3. Build feature vectors for all drivers ─────────────────────────────

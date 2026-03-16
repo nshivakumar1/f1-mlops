@@ -239,8 +239,15 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
     # Feature 0 & 1: tyre_age and stint_number
     current_stint = stints[-1] if stints else {}
     lap_start = current_stint.get("lap_start", 0)
-    lap_end = current_stint.get("lap_end") or (lap_start + len(laps))
-    tyre_age = lap_end - lap_start
+    # lap_end is None for an ongoing stint — compute from fresh laps data so
+    # tyre_age stays accurate even when stints come from the S3 fallback cache.
+    lap_end = current_stint.get("lap_end")
+    if lap_end:
+        tyre_age = lap_end - lap_start
+    else:
+        # Count laps completed since this stint started using fresh lap records
+        laps_in_stint = [l for l in laps if (l.get("lap_number") or 0) >= lap_start]
+        tyre_age = len(laps_in_stint) if laps_in_stint else len(laps)
     stint_number = current_stint.get("stint_number", 1)
 
     # Feature 2: gap_to_leader
