@@ -102,8 +102,36 @@ resource "aws_iam_role_policy" "lambda_custom" {
       },
       {
         Effect   = "Allow"
-        Action   = ["cloudwatch:PutMetricData"]
+        Action   = ["cloudwatch:PutMetricData", "cloudwatch:DescribeAlarms", "cloudwatch:SetAlarmState"]
         Resource = "*"
+      },
+      {
+        # Race agent: read CloudWatch Logs for diagnosis
+        Effect = "Allow"
+        Action = [
+          "logs:DescribeLogStreams",
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents"
+        ]
+        Resource = "arn:aws:logs:${var.aws_region}:${var.account_id}:log-group:/aws/lambda/*"
+      },
+      {
+        # Race agent: invoke other Lambdas for manual remediation triggers
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = "arn:aws:lambda:${var.aws_region}:${var.account_id}:function:${var.project}-*"
+      },
+      {
+        # Race agent: re-enable EventBridge poller
+        Effect   = "Allow"
+        Action   = ["events:EnableRule", "events:DisableRule", "events:DescribeRule"]
+        Resource = "arn:aws:events:${var.aws_region}:${var.account_id}:rule/${var.project}-*"
+      },
+      {
+        # Race agent: redeploy API Gateway stage
+        Effect   = "Allow"
+        Action   = ["apigateway:POST", "apigateway:PATCH", "apigateway:GET"]
+        Resource = "arn:aws:apigateway:${var.aws_region}::/restapis/*"
       }
     ]
   })

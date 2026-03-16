@@ -194,6 +194,7 @@ def lambda_handler(event, context):
     # ── 1. Resolve session key ───────────────────────────────────────────────
     # Priority: env var override > event param > OpenF1 latest session
     env_session = os.environ.get("SESSION_KEY", "")
+    country_name = ""
     if env_session:
         session_key = env_session
     elif event.get("session_key"):
@@ -202,6 +203,7 @@ def lambda_handler(event, context):
         try:
             session = get_latest_session()
             session_key = str(session.get("session_key", "latest"))
+            country_name = session.get("country_name", "")
         except Exception as e:
             logger.error(f"Failed to get session: {e}")
             session_key = "latest"
@@ -307,6 +309,7 @@ def lambda_handler(event, context):
         Key=s3_key,
         Body=json.dumps({
             "session_key": session_key,
+            "country_name": country_name,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "predictions": predictions,
             "errors": errors,

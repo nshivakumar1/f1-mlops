@@ -23,6 +23,33 @@ AWS_REGION = os.environ.get("AWS_REGION_NAME", "us-east-1")
 s3 = boto3.client("s3", region_name=AWS_REGION)
 sagemaker_runtime = boto3.client("sagemaker-runtime", region_name=AWS_REGION)
 
+# OpenF1 country_name → Multiviewer circuit key (2026 F1 calendar + common circuits)
+COUNTRY_TO_CIRCUIT_KEY: dict = {
+    "Australia":      "10",   # Melbourne
+    "Japan":          "46",   # Suzuka
+    "China":          "49",   # Shanghai
+    "Bahrain":        "63",   # Sakhir
+    "Saudi Arabia":   "149",  # Jeddah
+    "United States":  "9",    # Austin (COTA) — Miami=151, Las Vegas=152
+    "Miami":          "151",  # Miami
+    "Las Vegas":      "152",  # Las Vegas
+    "Monaco":         "22",   # Monte Carlo
+    "Spain":          "15",   # Catalunya
+    "Canada":         "23",   # Montreal
+    "Austria":        "19",   # Spielberg (Red Bull Ring)
+    "Great Britain":  "2",    # Silverstone
+    "Hungary":        "4",    # Hungaroring
+    "Belgium":        "7",    # Spa-Francorchamps
+    "Netherlands":    "55",   # Zandvoort
+    "Italy":          "39",   # Monza (Imola=6)
+    "Azerbaijan":     "144",  # Baku
+    "Singapore":      "61",   # Marina Bay
+    "Mexico":         "65",   # Mexico City
+    "Brazil":         "14",   # Interlagos
+    "Qatar":          "150",  # Lusail
+    "United Arab Emirates": "70",  # Yas Marina
+}
+
 
 def _response(status_code: int, body: dict) -> dict:
     return {
@@ -149,8 +176,12 @@ def handle_latest_session() -> dict:
         session_key = session_part.replace("session_", "") if session_part else "unknown"
         obj = s3.get_object(Bucket=S3_BUCKET, Key=latest["Key"])
         data = json.loads(obj["Body"].read().decode())
+        country_name = data.get("country_name", "")
+        circuit_key = COUNTRY_TO_CIRCUIT_KEY.get(country_name, "")
         return _response(200, {
             "session_key": session_key,
+            "country_name": country_name,
+            "circuit_key": circuit_key,
             "prediction_time": data.get("timestamp"),
             "safety_car_active": data.get("safety_car_active", False),
             "processing_time_ms": data.get("processing_time_ms"),

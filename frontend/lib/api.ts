@@ -12,6 +12,8 @@ export interface Prediction {
 
 export interface SessionData {
   session_key: string;
+  country_name?: string;
+  circuit_key?: string;
   prediction_time: string;
   safety_car_active: boolean;
   processing_time_ms?: number;

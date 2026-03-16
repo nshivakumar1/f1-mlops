@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { fetchLatestSession, getTeamColor, getTyreColor, type SessionData } from "@/lib/api";
+import { fetchLatestSession, fetchDriverPositions, fetchTrackLayout, getTeamColor, getTyreColor, type SessionData, type DriverPosition, type TrackLayout } from "@/lib/api";
 
 const REFRESH_INTERVAL = 30_000;
 
@@ -47,7 +47,92 @@ function DriverCard({ p, rank }: { p: SessionData["predictions"][0]; rank: numbe
     </div>
   );
 }
+const MAP_W = 800;
+const MAP_H = 420;
+const MAP_PAD = 32;
 
+function RaceMap({ circuitKey, predictions }: { circuitKey: string; predictions: SessionData["predictions"] }) {
+  const [track, setTrack] = useState<TrackLayout | null>(null);
+  const [driverPositions, setDriverPositions] = useState<Map<number, { x: number; y: number }>>(new Map());
+  const [trackError, setTrackError] = useState(false);
+
+  useEffect(() => {
+    if (!circuitKey) return;
+    setTrack(null);
+    setTrackError(false);
+    fetchTrackLayout(circuitKey).then((t) => {
+      if (t) setTrack(t);
+      else setTrackError(true);
+    });
+  }, [circuitKey]);
+
+  useEffect(() => {
+    const poll = async () => {
+      const data: DriverPosition[] = await fetchDriverPositions("");
+      if (!data.length) return;
+      const m = new Map<number, { x: number; y: number }>();
+      for (const d of data) m.set(d.driver_number, { x: d.x, y: d.y });
+      setDriverPositions(m);
+    };
+    poll();
+    const t = setInterval(poll, 5000);
+    return () => clearInterval(t);
+  }, []);
+
+  const colorMap = Object.fromEntries(predictions.map((p) => [p.driver_number, getTeamColor(p.team)]));
+
+  const bounds = track && track.x.length > 0
+    ? { minX: Math.min(...track.x), maxX: Math.max(...track.x), minY: Math.min(...track.y), maxY: Math.max(...track.y) }
+    : null;
+
+  const toSVG = (x: number, y: number) => {
+    if (!bounds) return { sx: 0, sy: 0 };
+    const scaleX = (MAP_W - 2 * MAP_PAD) / (bounds.maxX - bounds.minX || 1);
+    const scaleY = (MAP_H - 2 * MAP_PAD) / (bounds.maxY - bounds.minY || 1);
+    const scale = Math.min(scaleX, scaleY);
+    const offsetX = MAP_PAD + ((MAP_W - 2 * MAP_PAD) - (bounds.maxX - bounds.minX) * scale) / 2;
+    const offsetY = MAP_PAD + ((MAP_H - 2 * MAP_PAD) - (bounds.maxY - bounds.minY) * scale) / 2;
+    return {
+      sx: offsetX + (x - bounds.minX) * scale,
+      sy: offsetY + (y - bounds.minY) * scale,
+    };
+  };
+
+  // Build SVG polyline points from track x/y arrays
+  const trackPoints = bounds && track
+    ? track.x.map((px, i) => { const { sx, sy } = toSVG(px, track.y[i]); return `${sx},${sy}`; }).join(" ")
+    : "";
+
+  return (
+    <div className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] p-4">
+      <div className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
+        Live Circuit Map{track ? ` — ${track.circuit_name} ${track.year}` : ""}
+      </div>
+      <svg width="100%" viewBox={`0 0 ${MAP_W} ${MAP_H}`} className="w-full">
+        {/* Track outline as polyline */}
+        {trackPoints && (
+          <polyline points={trackPoints} fill="none" stroke="#333" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
+        )}
+        {/* Live driver dots */}
+        {bounds && Array.from(driverPositions.entries()).map(([num, pos]) => {
+          const { sx, sy } = toSVG(pos.x, pos.y);
+          const color = colorMap[num] || "#888";
+          return (
+            <g key={num}>
+              <circle cx={sx} cy={sy} r={8} fill={color} stroke="#000" strokeWidth={1.5} opacity={0.95} />
+              <text x={sx} y={sy + 4} textAnchor="middle" fontSize={7} fill="#000" fontWeight="bold">{num}</text>
+            </g>
+          );
+        })}
+      </svg>
+      {!track && !trackError && <div className="text-center text-gray-600 text-xs py-4">Loading circuit…</div>}
+      {trackError && <div className="text-center text-gray-600 text-xs py-4">Circuit layout unavailable</div>}
+      {track && driverPositions.size === 0 && (
+        <div className="text-center text-gray-600 text-xs pt-2">Awaiting live position data…</div>
+      )}
+    </div>
+  );
+}
 
 export default function LivePage() {
   const [data, setData] = useState<SessionData | null>(null);
@@ -118,6 +203,9 @@ export default function LivePage() {
               </div>
               <p className="text-sm text-gray-200 leading-relaxed italic">{data.commentary}</p>
             </div>
+          )}
+          {data.circuit_key && (
+            <RaceMap circuitKey={data.circuit_key} predictions={data.predictions} />
           )}
           <div className="space-y-3">
             {data.predictions.map((p, i) => <DriverCard key={p.driver_number} p={p} rank={i + 1} />)}

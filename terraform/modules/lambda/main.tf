@@ -125,3 +125,56 @@ resource "aws_cloudwatch_log_group" "rest_handler" {
   name              = "/aws/lambda/${aws_lambda_function.rest_handler.function_name}"
   retention_in_days = 14
 }
+
+# ── Race Day AI Agent ─────────────────────────────────────────────────────────
+data "archive_file" "race_agent" {
+  type        = "zip"
+  source_dir  = "${path.root}/../../../lambda/race_agent"
+  output_path = "${path.module}/race_agent.zip"
+}
+
+resource "aws_lambda_function" "race_agent" {
+  function_name    = "${var.project}-race-agent"
+  filename         = data.archive_file.race_agent.output_path
+  source_code_hash = data.archive_file.race_agent.output_base64sha256
+  handler          = "handler.lambda_handler"
+  runtime          = "python3.12"
+  memory_size      = 256
+  timeout          = 60
+  role             = var.lambda_role_arn
+
+  environment {
+    variables = {
+      S3_BUCKET             = var.s3_bucket
+      SNS_TOPIC_ARN         = var.sns_topic_arn
+      AWS_REGION_NAME       = var.aws_region
+      ANTHROPIC_SECRET_NAME = "f1-mlops/anthropic-api-key"
+      ENRICHMENT_FUNCTION   = "${var.project}-enrichment"
+      REST_HANDLER_FUNCTION = "${var.project}-rest-handler"
+      API_URL               = "https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1"
+    }
+  }
+
+  tracing_config { mode = "Active" }
+}
+
+# Allow SNS alarms to invoke the race agent
+resource "aws_lambda_permission" "sns_race_agent" {
+  statement_id  = "AllowSNSInvokeAgent"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.race_agent.function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = var.sns_topic_arn
+}
+
+# SNS subscription — alarms trigger the agent
+resource "aws_sns_topic_subscription" "race_agent" {
+  topic_arn = var.sns_topic_arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.race_agent.arn
+}
+
+resource "aws_cloudwatch_log_group" "race_agent" {
+  name              = "/aws/lambda/${aws_lambda_function.race_agent.function_name}"
+  retention_in_days = 14
+}
