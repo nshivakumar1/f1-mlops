@@ -136,6 +136,7 @@ module "newrelic" {
   environment          = var.environment
   s3_bucket            = module.s3.data_bucket_name
   newrelic_license_key = data.aws_secretsmanager_secret_version.newrelic_key.secret_string
+  newrelic_account_id  = var.newrelic_account_id
 }
 
 module "codepipeline" {

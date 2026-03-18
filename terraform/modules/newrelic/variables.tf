@@ -6,3 +6,8 @@ variable "newrelic_license_key" {
   type      = string
   sensitive = true
 }
+
+variable "newrelic_account_id" {
+  description = "New Relic account ID (used as ExternalId for cross-account role)"
+  type        = string
+}
