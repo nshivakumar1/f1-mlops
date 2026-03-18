@@ -4,3 +4,5 @@ output "rest_handler_function_arn" { value = aws_lambda_function.rest_handler.ar
 output "rest_handler_function_name" { value = aws_lambda_function.rest_handler.function_name }
 output "prewarm_function_arn" { value = aws_lambda_function.prewarm.arn }
 output "slack_notifier_function_arn" { value = aws_lambda_function.slack_notifier.arn }
+output "prerace_check_function_arn" { value = aws_lambda_function.prerace_check.arn }
+output "prerace_check_function_name" { value = aws_lambda_function.prerace_check.function_name }

@@ -62,13 +62,14 @@ module "lambda" {
 }
 
 module "eventbridge" {
-  source            = "../../modules/eventbridge"
-  project           = var.project
-  environment       = var.environment
-  enrichment_lambda = module.lambda.enrichment_function_arn
-  s3_bucket         = module.s3.data_bucket_name
-  pipeline_role_arn = module.iam.eventbridge_role_arn
-  stepfunctions_arn = module.stepfunctions.state_machine_arn
+  source               = "../../modules/eventbridge"
+  project              = var.project
+  environment          = var.environment
+  enrichment_lambda    = module.lambda.enrichment_function_arn
+  s3_bucket            = module.s3.data_bucket_name
+  pipeline_role_arn    = module.iam.eventbridge_role_arn
+  stepfunctions_arn    = module.stepfunctions.state_machine_arn
+  prerace_check_lambda = module.lambda.prerace_check_function_arn
 }
 
 module "sagemaker" {

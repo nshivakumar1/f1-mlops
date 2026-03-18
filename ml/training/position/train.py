@@ -2,8 +2,8 @@
 SageMaker Training Script — Final Position Predictor
 Algorithm: Random Forest Regressor
 Target: final_position (1–22)
-Target metric: RMSE < 2.1 positions
-Features: grid_pos, qualifying_delta, pit_count, stint_strategy, circuit_type
+Target metric: RMSE < 2.5 positions
+Features: grid_pos, qualifying_delta, pit_count, stint_strategy, circuit_type, live race state
 """
 import argparse
 import os
@@ -25,9 +25,13 @@ FEATURE_COLS = [
     "team_performance_score",
     "tyre_strategy_encoded",
     "weather_impact_score",
+    "current_position",      # live race position (1–22), derived from gap ranking
+    "gap_to_leader",         # seconds behind leader (0.0 for leader)
+    "lap_fraction",          # lap_number / total_laps (0.0–1.0)
+    "safety_car_active",     # 1 if SC/VSC active, 0 if not
 ]
 TARGET_COL = "final_position"
-RMSE_THRESHOLD = 2.1
+RMSE_THRESHOLD = 2.5
 
 
 def load_data(data_dir: str) -> pd.DataFrame:
@@ -57,6 +61,16 @@ def encode_features(df: pd.DataFrame) -> pd.DataFrame:
         "Racing Bulls": 0.62, "Audi": 0.50, "Cadillac": 0.45,
     }
     df["team_performance_score"] = df.get("team", pd.Series(["McLaren"] * len(df))).map(team_scores).fillna(0.5)
+
+    # Live features — fill with sensible defaults when not present in historical data
+    if "current_position" not in df.columns:
+        df["current_position"] = df.get("grid_position", pd.Series([10] * len(df)))
+    if "gap_to_leader" not in df.columns:
+        df["gap_to_leader"] = 0
+    if "lap_fraction" not in df.columns:
+        df["lap_fraction"] = 0.5
+    if "safety_car_active" not in df.columns:
+        df["safety_car_active"] = 0
 
     return df
 

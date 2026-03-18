@@ -1,3 +1,9 @@
+data "archive_file" "prerace_check" {
+  type        = "zip"
+  source_dir  = "${path.root}/../../../lambda/prerace_check"
+  output_path = "${path.module}/prerace_check.zip"
+}
+
 data "archive_file" "enrichment" {
   type        = "zip"
   source_dir  = "${path.root}/../../../lambda/enrichment"
@@ -136,6 +142,42 @@ resource "aws_lambda_function" "slack_notifier" {
       NEW_RELIC_EXTENSION_SEND_FUNCTION_LOGS = "true"
     }
   }
+}
+
+# Pre-race health check Lambda — run 30 min before lights out
+resource "aws_lambda_function" "prerace_check" {
+  function_name    = "${var.project}-prerace-check"
+  filename         = data.archive_file.prerace_check.output_path
+  source_code_hash = data.archive_file.prerace_check.output_base64sha256
+  handler          = "newrelic_lambda_wrapper.handler.handler"
+  runtime          = "python3.12"
+  memory_size      = 256
+  timeout          = 60
+  role             = var.lambda_role_arn
+  layers           = [var.newrelic_layer_arn]
+
+  environment {
+    variables = {
+      S3_BUCKET             = var.s3_bucket
+      SAGEMAKER_ENDPOINT    = var.sagemaker_endpoint
+      AWS_REGION_NAME       = var.aws_region
+      PREWARM_FUNCTION_NAME = "${var.project}-prewarm"
+      EVENTBRIDGE_RULE_NAME = "${var.project}-live-poller"
+      # New Relic APM
+      NEW_RELIC_LAMBDA_HANDLER               = "handler.lambda_handler"
+      NEW_RELIC_ACCOUNT_ID                   = var.newrelic_account_id
+      NEW_RELIC_TRUSTED_ACCOUNT_KEY          = var.newrelic_account_id
+      NEW_RELIC_LICENSE_KEY_SECRET           = "f1-mlops/newrelic-license-key"
+      NEW_RELIC_EXTENSION_SEND_FUNCTION_LOGS = "true"
+    }
+  }
+
+  tracing_config { mode = "Active" }
+}
+
+resource "aws_cloudwatch_log_group" "prerace_check" {
+  name              = "/aws/lambda/${aws_lambda_function.prerace_check.function_name}"
+  retention_in_days = 14
 }
 
 # Allow SNS to invoke slack_notifier

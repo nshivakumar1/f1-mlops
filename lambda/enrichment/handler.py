@@ -115,6 +115,51 @@ def invoke_pitstop_model_batch(feature_vectors: list) -> list:
     return predictions
 
 
+def compute_win_probabilities(predictions: list, safety_car_active: bool) -> list:
+    """
+    Compute win probability per driver from live race state.
+    Uses position (gap ranking), gap, tyre freshness, team strength, and pitstop risk.
+    No second model endpoint needed — computed inline each lap.
+    """
+    TEAM_SCORES = {
+        "McLaren": 0.95, "Ferrari": 0.90, "Red Bull": 0.88, "Mercedes": 0.85,
+        "Williams": 0.65, "Aston Martin": 0.70, "Alpine": 0.60, "Haas": 0.55,
+        "Racing Bulls": 0.62, "Audi": 0.50, "Cadillac": 0.45,
+    }
+    if not predictions:
+        return predictions
+
+    # Derive current race position from gap_to_leader ranking (index 2 in features)
+    sorted_preds = sorted(predictions, key=lambda p: p["features"][2])
+    n = len(sorted_preds)
+
+    raw_scores = []
+    for rank, p in enumerate(sorted_preds):
+        gap = p["features"][2]       # gap_to_leader
+        tyre_age = p["features"][0]  # tyre_age
+        team = p.get("team", "")
+
+        position_score = (n - rank) / n                        # P1=1.0 ... last≈0
+        gap_score = max(0.0, 1.0 - gap / 120.0)               # 120s = roughly 1 lap behind
+        tyre_score = max(0.0, 1.0 - tyre_age / 50.0)          # fresher = better
+        team_score = TEAM_SCORES.get(team, 0.50)
+        pitstop_stability = 1.0 - p.get("prediction", {}).get("pitstop_probability", 0.0)
+
+        # Under safety car, position matters more, gap matters less
+        if safety_car_active:
+            raw = position_score * 0.55 + team_score * 0.25 + tyre_score * 0.15 + pitstop_stability * 0.05
+        else:
+            raw = position_score * 0.40 + gap_score * 0.25 + team_score * 0.20 + tyre_score * 0.10 + pitstop_stability * 0.05
+
+        raw_scores.append(raw)
+
+    total = sum(raw_scores) or 1.0
+    for p, score in zip(sorted_preds, raw_scores):
+        p["win_probability"] = round(score / total, 4)
+
+    return predictions
+
+
 def check_safety_car(session_data: dict) -> bool:
     """Check if safety car is active from already-fetched race control messages."""
     messages = session_data.get("race_control", [])
@@ -213,6 +258,7 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
                     "tyreAge": p.get("tyre_age", 0),
                     "lapNumber": p.get("lap_number", 0),
                     "safetyCarActive": safety_car_active,
+                    "winProbability": p.get("win_probability", 0.0),
                     "aiCommentary": commentary[:4095] if commentary else "",
                     "timestamp": int(time.time() * 1000),
                 })
@@ -354,12 +400,16 @@ def lambda_handler(event, context):
     if predictions and not any(e.get("batch") for e in errors):
         _last_good_predictions[session_key] = predictions
 
-    # ── 5b. Gemini race commentary (non-blocking — failure returns "") ────────
+    # ── 5b. Compute win probabilities from live race state ───────────────────
+    if predictions:
+        predictions = compute_win_probabilities(predictions, safety_car_active)
+
+    # ── 5c. Gemini race commentary (non-blocking — failure returns "") ────────
     commentary = generate_race_commentary(predictions, safety_car_active, session_key)
     if commentary:
         logger.info(f"Gemini commentary: {commentary[:80]}...")
 
-    # ── 5c. Fire SNS alerts with commentary attached ─────────────────────────
+    # ── 5d. Fire SNS alerts with commentary attached ─────────────────────────
     if driver_features:
         alert_queue_with_commentary = [
             {**p, "commentary": commentary}

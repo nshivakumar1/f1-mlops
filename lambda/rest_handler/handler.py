@@ -134,6 +134,7 @@ def handle_positions_get(session_key: str) -> dict:
                     "tyre_age": p["features"][0],
                     "pitstop_probability": p["prediction"].get("pitstop_probability", 0),
                     "confidence": p["prediction"].get("confidence", 0),
+                    "win_probability": p.get("win_probability", 0.0),
                 }
                 for p in sorted(
                     data.get("predictions", []),
@@ -195,6 +196,7 @@ def handle_latest_session() -> dict:
                     "tyre_age": p["features"][0],
                     "pitstop_probability": p["prediction"].get("pitstop_probability", 0),
                     "confidence": p["prediction"].get("confidence", 0),
+                    "win_probability": p.get("win_probability", 0.0),
                 }
                 for p in sorted(
                     data.get("predictions", []),
