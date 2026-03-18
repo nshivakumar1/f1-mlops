@@ -188,8 +188,10 @@ def publish_metrics_async(predictions: list):
     ThreadPoolExecutor(max_workers=1).submit(_publish)
 
 
-def push_to_newrelic(predictions: list, session_key: str, safety_car_active: bool):
-    """Push per-driver pitstop predictions to New Relic as F1PitstopPrediction custom events."""
+def push_to_newrelic(predictions: list, session_key: str, safety_car_active: bool, commentary: str = ""):
+    """Push per-driver pitstop predictions to New Relic as F1PitstopPrediction custom events.
+    Commentary (Groq/Llama) is attached to every event for display in NR dashboards.
+    """
     license_key = _get_newrelic_key()
     if not license_key or not NEWRELIC_ACCOUNT_ID or not predictions:
         return
@@ -211,6 +213,7 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
                     "tyreAge": p.get("tyre_age", 0),
                     "lapNumber": p.get("lap_number", 0),
                     "safetyCarActive": safety_car_active,
+                    "aiCommentary": commentary[:4095] if commentary else "",
                     "timestamp": int(time.time() * 1000),
                 })
 
@@ -388,7 +391,7 @@ def lambda_handler(event, context):
 
     # ── 7. Background: CloudWatch metrics + New Relic + Logstash (non-blocking) ─
     publish_metrics_async(predictions)
-    push_to_newrelic(predictions, session_key, safety_car_active)
+    push_to_newrelic(predictions, session_key, safety_car_active, commentary)
     push_logstash_async({
         "session_key": session_key,
         "timestamp": datetime.now(timezone.utc).isoformat(),

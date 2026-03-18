@@ -1,3 +1,32 @@
+# ── New Relic AWS Account Linking ─────────────────────────────────────────────
+# IAM role that New Relic assumes to poll CloudWatch for entity synthesis.
+# This enables Lambda/SageMaker to appear as proper entities in NR (not just raw metrics).
+# After terraform apply, register the role ARN in:
+#   NR UI → Infrastructure → AWS → Add AWS account → use role ARN below
+
+resource "aws_iam_role" "newrelic_integration" {
+  name = "${var.project}-newrelic-integration"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = "sts:AssumeRole"
+      Principal = {
+        # New Relic's AWS account ID for cross-account role assumption
+        AWS = "arn:aws:iam::754728514883:root"
+      }
+      Condition = {
+        StringEquals = { "sts:ExternalId" = var.newrelic_account_id }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "newrelic_readonly" {
+  role       = aws_iam_role.newrelic_integration.name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
 # ── New Relic Observability Integration ───────────────────────────────────────
 # CloudWatch Metric Streams → Kinesis Firehose → New Relic
 # Streams Lambda, SageMaker, and custom F1MLOps metrics in near-real-time
