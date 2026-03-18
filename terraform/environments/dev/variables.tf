@@ -45,3 +45,15 @@ variable "github_branch" {
   type        = string
   default     = "main"
 }
+
+variable "newrelic_account_id" {
+  description = "New Relic account ID"
+  type        = string
+  default     = "7941720"
+}
+
+variable "newrelic_layer_arn" {
+  description = "New Relic Lambda layer ARN for Python 3.12 (us-east-1). Update version as NR releases new layers."
+  type        = string
+  default     = "arn:aws:lambda:us-east-1:451483290750:layer:NewRelicPython312:17"
+}

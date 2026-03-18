@@ -27,6 +27,10 @@ provider "aws" {
   }
 }
 
+data "aws_secretsmanager_secret_version" "newrelic_key" {
+  secret_id = "f1-mlops/newrelic-license-key"
+}
+
 module "s3" {
   source      = "../../modules/s3"
   project     = var.project
@@ -44,15 +48,17 @@ module "iam" {
 }
 
 module "lambda" {
-  source             = "../../modules/lambda"
-  project            = var.project
-  environment        = var.environment
-  aws_region         = var.aws_region
-  account_id         = var.account_id
-  lambda_role_arn    = module.iam.lambda_role_arn
-  s3_bucket          = module.s3.data_bucket_name
-  sagemaker_endpoint = module.sagemaker.endpoint_name
-  sns_topic_arn      = module.cloudwatch.sns_topic_arn
+  source              = "../../modules/lambda"
+  project             = var.project
+  environment         = var.environment
+  aws_region          = var.aws_region
+  account_id          = var.account_id
+  lambda_role_arn     = module.iam.lambda_role_arn
+  s3_bucket           = module.s3.data_bucket_name
+  sagemaker_endpoint  = module.sagemaker.endpoint_name
+  sns_topic_arn       = module.cloudwatch.sns_topic_arn
+  newrelic_layer_arn  = var.newrelic_layer_arn
+  newrelic_account_id = var.newrelic_account_id
 }
 
 module "eventbridge" {
@@ -122,6 +128,14 @@ module "stepfunctions" {
   account_id  = var.account_id
   role_arn    = module.iam.stepfunctions_role_arn
   s3_bucket   = module.s3.data_bucket_name
+}
+
+module "newrelic" {
+  source               = "../../modules/newrelic"
+  project              = var.project
+  environment          = var.environment
+  s3_bucket            = module.s3.data_bucket_name
+  newrelic_license_key = data.aws_secretsmanager_secret_version.newrelic_key.secret_string
 }
 
 module "codepipeline" {

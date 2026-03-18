@@ -32,11 +32,32 @@ SAGEMAKER_ENDPOINT = os.environ["SAGEMAKER_ENDPOINT"]
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
 AWS_REGION = os.environ.get("AWS_REGION_NAME", "us-east-1")
 LOGSTASH_ENDPOINT = os.environ.get("LOGSTASH_ENDPOINT", "")
+NEWRELIC_ACCOUNT_ID = os.environ.get("NEWRELIC_ACCOUNT_ID", "")
+NEWRELIC_LICENSE_KEY_SECRET = os.environ.get("NEWRELIC_LICENSE_KEY_SECRET", "")
 
 s3 = boto3.client("s3", region_name=AWS_REGION)
 sagemaker_runtime = boto3.client("sagemaker-runtime", region_name=AWS_REGION)
 cloudwatch = boto3.client("cloudwatch", region_name=AWS_REGION)
 sns = boto3.client("sns", region_name=AWS_REGION)
+secretsmanager = boto3.client("secretsmanager", region_name=AWS_REGION)
+
+# Cached NR license key — fetched once per warm container
+_newrelic_license_key: str = ""
+
+
+def _get_newrelic_key() -> str:
+    global _newrelic_license_key
+    if _newrelic_license_key:
+        return _newrelic_license_key
+    if not NEWRELIC_LICENSE_KEY_SECRET:
+        return ""
+    try:
+        secret = secretsmanager.get_secret_value(SecretId=NEWRELIC_LICENSE_KEY_SECRET)
+        _newrelic_license_key = secret["SecretString"]
+        return _newrelic_license_key
+    except Exception as e:
+        logger.warning(f"Failed to fetch NR license key: {e}")
+        return ""
 
 # Module-level fallback: last successful prediction batch (survives warm invocations)
 _last_good_predictions: dict = {}   # session_key → list of prediction dicts
@@ -165,6 +186,51 @@ def publish_metrics_async(predictions: list):
             logger.warning(f"CloudWatch publish failed: {e}")
 
     ThreadPoolExecutor(max_workers=1).submit(_publish)
+
+
+def push_to_newrelic(predictions: list, session_key: str, safety_car_active: bool):
+    """Push per-driver pitstop predictions to New Relic as F1PitstopPrediction custom events."""
+    license_key = _get_newrelic_key()
+    if not license_key or not NEWRELIC_ACCOUNT_ID or not predictions:
+        return
+
+    def _push():
+        try:
+            events = []
+            for p in predictions:
+                pred = p.get("prediction", {})
+                events.append({
+                    "eventType": "F1PitstopPrediction",
+                    "sessionKey": session_key,
+                    "driverNumber": p.get("driver_number"),
+                    "driverCode": p.get("driver_code", ""),
+                    "team": p.get("team", ""),
+                    "pitstopProbability": pred.get("pitstop_probability", 0.0),
+                    "confidence": pred.get("confidence", 0.0),
+                    "tyreCompound": p.get("tyre_compound", "UNKNOWN"),
+                    "tyreAge": p.get("tyre_age", 0),
+                    "lapNumber": p.get("lap_number", 0),
+                    "safetyCarActive": safety_car_active,
+                    "timestamp": int(time.time() * 1000),
+                })
+
+            data = json.dumps(events).encode()
+            url = f"https://insights-collector.newrelic.com/v1/accounts/{NEWRELIC_ACCOUNT_ID}/events"
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={
+                    "Content-Type": "application/json",
+                    "Api-Key": license_key,
+                },
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=5)
+            logger.info(f"Pushed {len(events)} F1PitstopPrediction events to New Relic")
+        except Exception as e:
+            logger.warning(f"New Relic event push failed (non-critical): {e}")
+
+    ThreadPoolExecutor(max_workers=1).submit(_push)
 
 
 def push_logstash_async(payload: dict):
@@ -320,8 +386,9 @@ def lambda_handler(event, context):
         ContentType="application/json",
     )
 
-    # ── 7. Background: CloudWatch metrics + Logstash (non-blocking) ──────────
+    # ── 7. Background: CloudWatch metrics + New Relic + Logstash (non-blocking) ─
     publish_metrics_async(predictions)
+    push_to_newrelic(predictions, session_key, safety_car_active)
     push_logstash_async({
         "session_key": session_key,
         "timestamp": datetime.now(timezone.utc).isoformat(),
