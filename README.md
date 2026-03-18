@@ -18,6 +18,7 @@
 [![Terraform](https://img.shields.io/badge/Terraform-1.9.8-7B42BC?style=flat-square&logo=terraform)](terraform/)
 [![AWS](https://img.shields.io/badge/AWS-us--east--1-FF9900?style=flat-square&logo=amazonaws)](https://aws.amazon.com)
 [![Cost](https://img.shields.io/badge/cost%2Frace%20weekend-%241.22-success?style=flat-square)](README.md#aws-resources)
+[![CodeRabbit](https://img.shields.io/coderabbit/prs/github/nshivakumar1/f1-mlops?utm_source=oss&utm_medium=github&utm_campaign=nshivakumar1%2Ff1-mlops&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)](https://coderabbit.ai)
 
 </div>
 
