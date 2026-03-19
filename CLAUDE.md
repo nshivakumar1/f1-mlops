@@ -5,7 +5,7 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 
 - **Repo:** `nshivakumar1/f1-mlops` (NOT `theinfinityloop/f1-mlops`)
 - **AWS Account:** `297997106614`, region `us-east-1`
-- **ELK Stack EC2:** `i-05e4b8ddbcce9647d` (t3.medium, stopped between races — IP changes on restart)
+- **ELK Stack EC2:** RETIRED — do not use
 
 ---
 
@@ -29,16 +29,11 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 
 ### 5. Lambda ZIP Files — Must Be in plan_output Artifact
 - Lambda module uses `data "archive_file"` which creates ZIPs during `terraform plan`
-- ZIPs are gitignored (`terraform/modules/lambda/*.zip`) and don't exist in fresh CodeBuild workspaces
-- **Fix:** Include ZIPs in `buildspec.yml` artifacts; copy from `CODEBUILD_SRC_DIR_plan_output` before `terraform apply`
-- In `scripts/ci_build.sh` apply stage, copy ZIPs before running terraform:
-  ```bash
-  for func in enrichment rest_handler prewarm slack_notifier; do
-    if [ -f "${PLAN_SRC}/terraform/modules/lambda/${func}.zip" ]; then
-      cp "${PLAN_SRC}/terraform/modules/lambda/${func}.zip" terraform/modules/lambda/${func}.zip
-    fi
-  done
-  ```
+- ZIPs are gitignored (`terraform/modules/lambda/*.zip`) and don't exist in fresh CI workspaces
+- **Fix (GitHub Actions):** Build all ZIPs in the plan job, include in artifact upload, download in deploy job
+- **Current Lambda functions:** `enrichment`, `rest_handler`, `prewarm`, `slack_notifier`, `prerace_check`
+- The build loop and artifact list in `.github/workflows/ci.yml` **must include ALL Lambda function names**
+- If a new Lambda is added to Terraform, add its name to both the build loop and the artifact `path:` list
 
 ### 6. CodeStar/CodeConnections — Use AVAILABLE Connection
 - **Wrong:** Creating a new `aws_codestarconnections_connection` resource — it starts as PENDING and requires manual activation in console
@@ -293,6 +288,40 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - Datasource UID: `cfg1tmj8jbu2oa` (created via API, persists in Grafana DB)
 - If datasource needs recreation after instance replacement, re-POST the datasource config via Grafana API
 
+### 39. New Lambda Functions — Must Be Added to CI Build Loop AND Artifact List
+
+- When a new Lambda function is added to Terraform, it **must** also be added to **three places** in `.github/workflows/ci.yml`:
+  1. The build loop in the `plan` job: `for func in enrichment rest_handler prewarm slack_notifier prerace_check ...`
+  2. The artifact `path:` list in `Upload plan artifacts` step
+  3. The redeploy loop in the `deploy` job
+- **Failure mode:** Terraform apply succeeds but Lambda gets a ~5KB source-only ZIP (no pip deps) — `No module named '...'` at runtime
+- **Current Lambda list:** `enrichment`, `rest_handler`, `prewarm`, `slack_notifier`, `prerace_check`
+
+### 40. Grafana RETIRED — Do Not Recreate, Use New Relic
+
+- Grafana EC2 (`i-09c735935e93429d5`) is STOPPED and retired as of 2026-03-19
+- **All observability is now in New Relic** (account ID `7941720`)
+- Live race data: `F1PitstopPrediction` custom events with `pitstopProbability`, `winProbability`, `aiCommentary`
+- Infra metrics: CloudWatch Metric Streams → Kinesis Firehose → NR (Lambda, SageMaker, Billing)
+- Do NOT recreate Grafana datasources, dashboards, or EC2 unless explicitly re-evaluating the observability stack
+
+### 41. Win Probability — Computed Inline, No Second SageMaker Endpoint
+
+- Win probability is computed in the enrichment Lambda (`compute_win_probabilities()`) after each pitstop batch
+- Uses live race state: gap ranking (40%), gap to leader (25%), team strength (20%), tyre freshness (10%), pitstop stability (5%)
+- Under safety car: position weight increases to 55%, gap weight drops to 0% (gaps reset under SC)
+- **No second SageMaker endpoint** — the Random Forest position model (`ml/training/position/`) is trained but not deployed
+- `win_probability` is returned in `/sessions/latest` and `/predict/positions/{session_key}` responses
+- `winProbability` is also sent as a field in New Relic `F1PitstopPrediction` custom events
+
+### 42. Pre-Race Health Check — Run Before Every Race
+
+- Lambda: `f1-mlops-prerace-check` — invoke manually 30 min before lights out
+- Checks: SageMaker InService, OpenF1 API, Groq secret, NR license key, OpenF1 credentials, EventBridge poller state, S3 write, prewarm invoke
+- `all_pass` excludes EventBridge poller (expected DISABLED pre-race)
+- Report saved to `s3://{bucket}/prerace_check/{timestamp}.json`
+- EventBridge rule `f1-mlops-prerace-check` exists (cron Sundays 12:30 UTC) but is **DISABLED by default** — update cron per race calendar or invoke manually
+
 ---
 
 ## Architecture
@@ -300,30 +329,32 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 ```
 GitHub → GitHub Actions → [Test → Plan → Approve → Deploy]
                               ↓
-                        Lambda (enrichment, rest_handler, prewarm, slack_notifier)
-                        SageMaker Serverless Endpoint
+                        Lambda (enrichment, rest_handler, prewarm, slack_notifier, prerace_check)
+                        SageMaker Serverless Endpoint (pitstop XGBoost)
                         S3 (data + artifacts)
                         CloudWatch Alarms → SNS → AWS Chatbot → Slack #f1-race-alerts
-                        REST API → Grafana Infinity → Live Race Dashboard
-                        CloudWatch Metrics → Grafana CloudWatch → Infra Dashboard
+                        CloudWatch Metric Stream → Kinesis Firehose → New Relic
+                        REST API → New Relic Infinity → Live Race Dashboard
 ```
 
-### Observability (All in Grafana)
+### Observability (New Relic)
 
-- **Live race data:** Grafana Infinity datasource → REST API (`/sessions/latest`) → pitstop probabilities, tyre age, safety car, AI commentary
-- **Infra/ops:** Grafana CloudWatch datasource → Lambda duration/errors/throttles, SageMaker invocation latency
-- **ELK is retired** — do not add it back
+- **Live race predictions:** Enrichment Lambda POSTs `F1PitstopPrediction` custom events to NR after each batch
+  - Fields: `pitstopProbability`, `winProbability`, `tyreCompound`, `tyreAge`, `lapNumber`, `safetyCarActive`, `aiCommentary`
+- **AWS infra metrics:** CloudWatch Metric Streams → Kinesis Firehose → NR (Lambda, SageMaker, F1MLOps/Models, Billing)
+- **Lambda APM:** New Relic Lambda Layer (`arn:aws:lambda:us-east-1:451483290750:layer:NewRelicPython312:17`) on all 5 Lambdas
+- **Alerts:** NR email alerts configured (NR UI → Alerts → Notification channels)
+- **Slack:** AWS Chatbot handles CloudWatch Alarm → #f1-race-alerts (independent of NR)
+- **Grafana:** RETIRED — replaced by New Relic
+- **ELK:** RETIRED — do not add back
 
-## Grafana EC2
+### New Relic Setup
 
-- **Instance ID:** `i-09c735935e93429d5` (t3.micro, stop between races)
-- **Login:** admin / f1mlops2026
-- **Datasources:** CloudWatch (uid: `P034F075C744B399F`) + Infinity/F1 REST API (uid: `cfg1tmj8jbu2oa`)
-- **Dashboards:** `f1-race-live` (Infinity), `f1-infra-metrics` (CloudWatch)
-- **IAM role:** `f1-mlops-grafana-role` (CloudWatchReadOnlyAccess)
-- **Security group:** `sg-07794e4eb4ba20283` (port 3000 + 22)
-- **Plugins installed:** `yesoreyeram-infinity-datasource` v3.7.4
-- **Note:** No Elastic IP — get fresh IP after each start with `aws ec2 describe-instances --instance-ids i-09c735935e93429d5 --region us-east-1 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text`
+- **NR Account ID:** `7941720`
+- **License key secret:** `f1-mlops/newrelic-license-key`
+- **NR AWS integration role:** `arn:aws:iam::297997106614:role/f1-mlops-newrelic-integration` (register in NR UI → Infrastructure → AWS)
+- **Custom events query:** `SELECT * FROM F1PitstopPrediction SINCE 1 hour ago`
+- **Lambda layer ARN:** `arn:aws:lambda:us-east-1:451483290750:layer:NewRelicPython312:17`
 
 ## Key File Paths
 - `buildspec.yml` — CodeBuild spec (calls `scripts/ci_build.sh`)
@@ -348,40 +379,55 @@ GitHub → GitHub Actions → [Test → Plan → Approve → Deploy]
 - Displays pitstop probability per driver + AI commentary card (Groq)
 - Race map: SVG-based circuit map from OpenF1 `/v1/position` data, polls every 5s
 
-### Race Outcome Model (XGBoost)
-- Separate model from pitstop predictor
-- Input: current position, gap to leader, tyre strategy, historical circuit performance
-- Output: win/podium probability per driver, updated each lap
-- Training data: Ergast API + FastF1 historical races
+### Race Outcome / Win Probability — COMPLETE (inline, no model endpoint)
+- Win probability computed inline in enrichment Lambda each lap — see Known Mistake #41
+- Position model (`ml/training/position/`) retrained with 12 features (added `current_position`, `gap_to_leader`, `lap_fraction`, `safety_car_active`) and inference script created — ready for SageMaker deployment if more accuracy is needed later
 
 ---
 
 ## Race Day Checklist
 
-> **Note:** ELK/Kibana is RETIRED. All visualizations are now in Grafana (Infinity datasource → REST API).
-> ELK EC2 (`i-09b80fc03109c35a1`) is stopped and no longer part of race day workflow.
+> **Note:** Grafana is RETIRED. Observability is now in New Relic.
+> ELK EC2 (`i-09b80fc03109c35a1`) and Grafana EC2 (`i-09c735935e93429d5`) are both STOPPED — do not restart.
 
-1. Start Grafana EC2: `aws ec2 start-instances --instance-ids i-09c735935e93429d5 --region us-east-1`
-2. Get Grafana IP: `aws ec2 describe-instances --instance-ids i-09c735935e93429d5 --region us-east-1 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text`
-3. Open Grafana: `http://<grafana-ip>:3000` — admin / f1mlops2026
-   - **Live race dashboard:** `/d/f1-race-live` — auto-refreshes every 30s, shows pitstop probabilities + AI commentary
-   - **Infrastructure dashboard:** `/d/f1-infra-metrics` — Lambda/SageMaker CloudWatch metrics
-4. Verify Lambda `GEMINI_SECRET_NAME` env var is set: `aws lambda get-function-configuration --function-name f1-mlops-enrichment --region us-east-1 --query 'Environment'`
-5. Enable live poller 30 min before lights out: `aws events enable-rule --name f1-mlops-live-poller --region us-east-1`
-6. Verify predictions flowing ~5 min after enabling (check S3 or Grafana `/d/f1-race-live`)
-7. Disable after session: `aws events disable-rule --name f1-mlops-live-poller --region us-east-1`
-8. Stop Grafana EC2: `aws ec2 stop-instances --instance-ids i-09c735935e93429d5 --region us-east-1`
+1. **30 min before race:** Run pre-race health check:
+   ```bash
+   aws lambda invoke --function-name f1-mlops-prerace-check \
+     --region us-east-1 --payload '{}' /tmp/prerace.json \
+     && python3 -c "import json; r=json.load(open('/tmp/prerace.json')); print('ALL PASS' if r['all_pass'] else f'FAILED: {r[\"failed_checks\"]}')"
+   ```
+   Fix any failed checks before proceeding. Report also saved to `s3://{bucket}/prerace_check/{timestamp}.json`.
 
-## Current State (as of 2026-03-15)
+2. **Enable live poller:**
+   ```bash
+   aws events enable-rule --name f1-mlops-live-poller --region us-east-1
+   ```
 
-- **Enrichment Lambda:** Deployed with Groq commentary (manually via S3, March 14)
-- **REST handler:** Deployed with `commentary` field in response (manually, March 14)
-- **Slack notifier:** Deployed with "AI Strategy Insight" label (manually, March 14)
-- **Groq API key:** Stored in `f1-mlops/gemini-api-key` secret as plain string `gsk_...`
-- **CodePipeline:** TerraformPlan grok `%%{` fix pushed — needs manual Approve after plan passes to sync Terraform state with manually-deployed Lambdas
-- **Frontend:** Deployed on Vercel, Root Directory = `frontend`, branding = Groq/Llama 3.3
-- **ELK EC2 (`i-09b80fc03109c35a1`):** STOPPED — retired, replaced by Grafana
-- **Grafana EC2 (`i-09c735935e93429d5`):** Running at `98.91.186.24`
-  - Datasources: CloudWatch (infra) + Infinity (F1 REST API → live race data)
-  - Dashboards: `f1-race-live` (pitstop probabilities, tyre age, AI commentary) + `f1-infra-metrics`
-- **SageMaker endpoint:** InService (serverless)
+3. **Verify predictions flowing** (~5 min after enabling):
+   ```bash
+   curl https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1/sessions/latest | python3 -m json.tool | head -30
+   ```
+
+4. **Monitor in New Relic:** `one.newrelic.com` → Query: `SELECT * FROM F1PitstopPrediction SINCE 30 minutes ago ORDER BY timestamp DESC`
+   - `pitstopProbability` + `winProbability` per driver
+   - `aiCommentary` (Groq Llama 3.3 70B)
+   - `safetyCarActive` flag
+
+5. **After race:** Disable poller:
+   ```bash
+   aws events disable-rule --name f1-mlops-live-poller --region us-east-1
+   ```
+
+## Current State (as of 2026-03-19)
+
+- **Enrichment Lambda:** Groq commentary + `win_probability` computed inline (position/gap/tyre/team scoring)
+- **REST handler:** `/sessions/latest` and `/predict/positions/{session_key}` return `win_probability` per driver
+- **Pre-race check Lambda:** `f1-mlops-prerace-check` — validates 8 systems before race start
+- **Slack notifier:** AWS Chatbot → #f1-race-alerts (CloudWatch Alarms only — NR alerts go to email)
+- **Groq API key:** `f1-mlops/gemini-api-key` (plain string `gsk_...`)
+- **New Relic:** License key in `f1-mlops/newrelic-license-key`; account ID `7941720`; Lambda layer on all 5 functions
+- **Frontend:** Deployed on Vercel, Root Directory = `frontend`; displays pitstop + win probability
+- **ELK EC2 (`i-09b80fc03109c35a1`):** STOPPED — retired
+- **Grafana EC2 (`i-09c735935e93429d5`):** STOPPED — retired (replaced by New Relic)
+- **SageMaker endpoint:** InService (serverless, pitstop XGBoost only)
+- **Position model:** Trained (12 features incl. live position/gap/lap_fraction) but not deployed as SageMaker endpoint — win probability is computed inline instead

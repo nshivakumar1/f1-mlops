@@ -71,7 +71,7 @@ jobs:
       - name: Build Lambda ZIPs and upload to S3
         run: |
           S3_BUCKET="f1-mlops-artifacts-297997106614"
-          for func in enrichment rest_handler prewarm slack_notifier; do
+          for func in enrichment rest_handler prewarm slack_notifier prerace_check; do
             src="lambda/${func}"
             out="terraform/modules/lambda/${func}.zip"
             if [ ! -d "$src" ]; then continue; fi
@@ -130,6 +130,7 @@ jobs:
             terraform/modules/lambda/rest_handler.zip
             terraform/modules/lambda/prewarm.zip
             terraform/modules/lambda/slack_notifier.zip
+            terraform/modules/lambda/prerace_check.zip
           retention-days: 7
 
   # ── 3. Terraform apply (requires manual approval via GitHub environment) ─────
@@ -172,7 +173,7 @@ jobs:
         # Pull the manylinux-built ZIPs from S3 (uploaded during plan phase) to override.
         run: |
           S3_BUCKET="f1-mlops-artifacts-297997106614"
-          for func in enrichment rest_handler prewarm slack_notifier; do
+          for func in enrichment rest_handler prewarm slack_notifier prerace_check; do
             FN="f1-mlops-${func//_/-}"
             S3_KEY="lambda-deployments/${func}.zip"
             # Check if Lambda exists
