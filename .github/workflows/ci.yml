@@ -10,15 +10,23 @@ permissions:
   id-token: write  # OIDC auth to AWS
   contents: read
 
+# Prevent concurrent Terraform applies on main — queue them, don't cancel
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 env:
   TF_VERSION: "1.9.8"
   TF_WORKING_DIR: terraform/environments/dev
+  S3_ARTIFACTS_BUCKET: f1-mlops-artifacts-297997106614
+  LAMBDA_FUNCTIONS: "enrichment rest_handler prewarm slack_notifier prerace_check"
 
 jobs:
   # ── 1. Tests + static checks (every push/PR) ────────────────────────────────
   test:
     name: Test & Validate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -45,8 +53,23 @@ jobs:
       - name: Terraform validate
         run: |
           cd ${{ env.TF_WORKING_DIR }}
-          terraform init -backend=false
-          terraform validate
+          terraform init -backend=false -no-color
+          terraform validate -no-color
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Frontend build check
+        run: npm run build
+        working-directory: frontend
 
   # ── 2. Terraform plan (main branch only) ────────────────────────────────────
   plan:
@@ -54,6 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -67,31 +91,47 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
-      - name: Build Lambda ZIPs and upload to S3
+      - name: Build Lambda ZIPs (manylinux) and upload to S3
         run: |
-          S3_BUCKET="f1-mlops-artifacts-297997106614"
-          for func in enrichment rest_handler prewarm slack_notifier prerace_check; do
+          set -euo pipefail
+          for func in ${{ env.LAMBDA_FUNCTIONS }}; do
             src="lambda/${func}"
             out="terraform/modules/lambda/${func}.zip"
-            if [ ! -d "$src" ]; then continue; fi
+            if [ ! -d "$src" ]; then
+              echo "::warning::lambda/${func} directory not found, skipping"
+              continue
+            fi
             mkdir -p "build/${func}"
             if [ -f "${src}/requirements.txt" ]; then
+              echo "Installing ${func} deps (manylinux2014_x86_64)..."
               pip install --quiet \
                 --platform manylinux2014_x86_64 \
                 --implementation cp \
                 --python-version 3.12 \
                 --only-binary=:all: \
                 -r "${src}/requirements.txt" \
-                -t "build/${func}/" || \
-              pip install --quiet -r "${src}/requirements.txt" -t "build/${func}/"
+                -t "build/${func}/"
+              # Fail loudly if manylinux install didn't produce deps
+              if [ -z "$(ls -A build/${func}/)" ]; then
+                echo "::error::manylinux install for ${func} produced empty build dir"
+                exit 1
+              fi
             fi
             cp "${src}"/*.py "build/${func}/"
             (cd "build/${func}" && zip -qr "../../${out}" .)
-            echo "Built ${out} ($(du -sh ${out} | cut -f1))"
-            # Upload to S3 so deploy job can pull after terraform apply overwrites local ZIP
-            aws s3 cp "${out}" "s3://${S3_BUCKET}/lambda-deployments/${func}.zip" --region us-east-1
-            echo "Uploaded to s3://${S3_BUCKET}/lambda-deployments/${func}.zip"
+            ZIP_SIZE_BYTES=$(stat -c%s "${out}" 2>/dev/null || stat -f%z "${out}")
+            ZIP_SIZE_MB=$((ZIP_SIZE_BYTES / 1024 / 1024))
+            echo "Built ${out} (${ZIP_SIZE_MB}MB)"
+            # Guard: enrichment without groq deps should be ~80MB; <1MB means no deps
+            if [ "${func}" = "enrichment" ] && [ "${ZIP_SIZE_MB}" -lt 1 ]; then
+              echo "::error::enrichment ZIP is ${ZIP_SIZE_MB}MB — expected ~80MB (groq deps missing)"
+              exit 1
+            fi
+            aws s3 cp "${out}" "s3://${{ env.S3_ARTIFACTS_BUCKET }}/lambda-deployments/${func}.zip" \
+              --region us-east-1
+            echo "Uploaded s3://${{ env.S3_ARTIFACTS_BUCKET }}/lambda-deployments/${func}.zip"
           done
 
       - name: Setup Terraform
@@ -100,19 +140,19 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform init
-        run: terraform init -input=false
+        run: terraform init -input=false -no-color
         working-directory: ${{ env.TF_WORKING_DIR }}
 
       - name: Terraform plan
         run: |
           set -o pipefail
-          terraform plan -input=false -out=tfplan.binary 2>&1 | tee plan_output.txt
+          terraform plan -input=false -no-color -out=tfplan.binary 2>&1 | tee plan_output.txt
           terraform show -json tfplan.binary > tfplan.json
         working-directory: ${{ env.TF_WORKING_DIR }}
 
       - name: Plan summary
         run: |
-          echo "### Terraform Plan" >> $GITHUB_STEP_SUMMARY
+          echo "### Terraform Plan — \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           grep -E "^Plan:|will be created|will be destroyed|will be updated|No changes" \
             ${{ env.TF_WORKING_DIR }}/plan_output.txt >> $GITHUB_STEP_SUMMARY || \
@@ -140,6 +180,7 @@ jobs:
     needs: plan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production  # GitHub environment — add yourself as required reviewer
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -161,36 +202,42 @@ jobs:
           path: terraform  # artifact root is terraform/ (LCA of all uploaded paths)
 
       - name: Terraform init
-        run: terraform init -input=false
+        run: terraform init -input=false -no-color
         working-directory: ${{ env.TF_WORKING_DIR }}
 
       - name: Terraform apply
-        run: terraform apply -input=false -auto-approve tfplan.binary
+        run: terraform apply -input=false -no-color -auto-approve tfplan.binary
         working-directory: ${{ env.TF_WORKING_DIR }}
 
       - name: Redeploy Lambda functions from S3 manylinux ZIPs
-        # Terraform's archive_file re-zips source-only in the deploy context (no pip deps).
-        # Pull the manylinux-built ZIPs from S3 (uploaded during plan phase) to override.
+        # Terraform's archive_file re-zips source-only in deploy context (no pip deps).
+        # Pull the manylinux ZIPs from S3 (uploaded during plan) to override.
         run: |
-          S3_BUCKET="f1-mlops-artifacts-297997106614"
-          for func in enrichment rest_handler prewarm slack_notifier prerace_check; do
+          set -euo pipefail
+          for func in ${{ env.LAMBDA_FUNCTIONS }}; do
             FN="f1-mlops-${func//_/-}"
             S3_KEY="lambda-deployments/${func}.zip"
-            # Check if Lambda exists
             if ! aws lambda get-function --function-name "$FN" --region us-east-1 &>/dev/null; then
               echo "  ${FN}: not found, skipping"
               continue
             fi
-            # Check if S3 ZIP exists (uploaded during plan phase)
-            if ! aws s3 ls "s3://${S3_BUCKET}/${S3_KEY}" --region us-east-1 &>/dev/null; then
-              echo "  ${func}: no S3 ZIP found, skipping"
+            if ! aws s3 ls "s3://${{ env.S3_ARTIFACTS_BUCKET }}/${S3_KEY}" --region us-east-1 &>/dev/null; then
+              echo "::warning::${func}: no S3 ZIP found, skipping redeploy"
               continue
             fi
-            aws lambda update-function-code --function-name "$FN" \
-              --s3-bucket "$S3_BUCKET" --s3-key "$S3_KEY" \
-              --region us-east-1 --output json | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'  {d[\"FunctionName\"]}: {d[\"CodeSize\"]} bytes')"
+            CODE_SIZE=$(aws lambda update-function-code \
+              --function-name "$FN" \
+              --s3-bucket "${{ env.S3_ARTIFACTS_BUCKET }}" \
+              --s3-key "$S3_KEY" \
+              --region us-east-1 \
+              --output json | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['CodeSize'])")
+            echo "  ${FN}: updated (${CODE_SIZE} bytes) — waiting for active state..."
+            aws lambda wait function-updated \
+              --function-name "$FN" \
+              --region us-east-1
+            echo "  ${FN}: active"
           done
 
-      - name: Print outputs
-        run: terraform output -json
+      - name: Print Terraform outputs
+        run: terraform output -no-color -json
         working-directory: ${{ env.TF_WORKING_DIR }}
