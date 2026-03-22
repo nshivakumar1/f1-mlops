@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import Link from "next/link";
 import "./globals.css";
+
+const geistSans = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
 
 export const metadata: Metadata = {
   title: "F1 Pitstop Predictor",
@@ -9,7 +14,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-[#0f0f0f] text-white">
+      <body className={`${geistSans.variable} ${geistMono.variable} font-sans min-h-screen bg-[#0f0f0f] text-white`}>
         <nav className="border-b border-[#2a2a2a] px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-2xl font-black tracking-tight">
@@ -17,9 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </span>
           </div>
           <div className="flex gap-6 text-sm text-gray-400">
-            <a href="/" className="hover:text-white transition-colors">Live</a>
-            <a href="/history" className="hover:text-white transition-colors">History</a>
-            <a href="/about" className="hover:text-white transition-colors">About</a>
+            <Link href="/" className="hover:text-white transition-colors">Live</Link>
+            <Link href="/history" className="hover:text-white transition-colors">History</Link>
+            <Link href="/about" className="hover:text-white transition-colors">About</Link>
           </div>
         </nav>
         <main>{children}</main>

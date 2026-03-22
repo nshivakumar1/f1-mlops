@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, memo } from "react";
 import { fetchLatestSession, fetchDriverPositions, fetchTrackLayout, getTeamColor, getTyreColor, type SessionData, type DriverPosition, type TrackLayout } from "@/lib/api";
 
 const REFRESH_INTERVAL = 30_000;
@@ -51,7 +51,7 @@ const MAP_W = 800;
 const MAP_H = 420;
 const MAP_PAD = 32;
 
-function RaceMap({ circuitKey, predictions }: { circuitKey: string; predictions: SessionData["predictions"] }) {
+const RaceMap = memo(function RaceMap({ circuitKey, sessionKey, predictions }: { circuitKey: string; sessionKey: string; predictions: SessionData["predictions"] }) {
   const [track, setTrack] = useState<TrackLayout | null>(null);
   const [driverPositions, setDriverPositions] = useState<Map<number, { x: number; y: number }>>(new Map());
   const [trackError, setTrackError] = useState(false);
@@ -67,8 +67,10 @@ function RaceMap({ circuitKey, predictions }: { circuitKey: string; predictions:
   }, [circuitKey]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const poll = async () => {
-      const data: DriverPosition[] = await fetchDriverPositions("");
+      const data: DriverPosition[] = await fetchDriverPositions(sessionKey);
+      if (controller.signal.aborted) return;
       if (!data.length) return;
       const m = new Map<number, { x: number; y: number }>();
       for (const d of data) m.set(d.driver_number, { x: d.x, y: d.y });
@@ -76,10 +78,13 @@ function RaceMap({ circuitKey, predictions }: { circuitKey: string; predictions:
     };
     poll();
     const t = setInterval(poll, 5000);
-    return () => clearInterval(t);
-  }, []);
+    return () => { clearInterval(t); controller.abort(); };
+  }, [sessionKey]);
 
-  const colorMap = Object.fromEntries(predictions.map((p) => [p.driver_number, getTeamColor(p.team)]));
+  const colorMap = useMemo(
+    () => Object.fromEntries(predictions.map((p) => [p.driver_number, getTeamColor(p.team)])),
+    [predictions]
+  );
 
   const bounds = track && track.x.length > 0
     ? { minX: Math.min(...track.x), maxX: Math.max(...track.x), minY: Math.min(...track.y), maxY: Math.max(...track.y) }
@@ -98,7 +103,6 @@ function RaceMap({ circuitKey, predictions }: { circuitKey: string; predictions:
     };
   };
 
-  // Build SVG polyline points from track x/y arrays
   const trackPoints = bounds && track
     ? track.x.map((px, i) => { const { sx, sy } = toSVG(px, track.y[i]); return `${sx},${sy}`; }).join(" ")
     : "";
@@ -108,12 +112,10 @@ function RaceMap({ circuitKey, predictions }: { circuitKey: string; predictions:
       <div className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">
         Live Circuit Map{track ? ` — ${track.circuit_name} ${track.year}` : ""}
       </div>
-      <svg width="100%" viewBox={`0 0 ${MAP_W} ${MAP_H}`} className="w-full">
-        {/* Track outline as polyline */}
+      <svg role="img" aria-label="Live circuit map" width="100%" viewBox={`0 0 ${MAP_W} ${MAP_H}`} className="w-full">
         {trackPoints && (
           <polyline points={trackPoints} fill="none" stroke="#333" strokeWidth="8" strokeLinecap="round" strokeLinejoin="round" />
         )}
-        {/* Live driver dots */}
         {bounds && Array.from(driverPositions.entries()).map(([num, pos]) => {
           const { sx, sy } = toSVG(pos.x, pos.y);
           const color = colorMap[num] || "#888";
@@ -132,7 +134,7 @@ function RaceMap({ circuitKey, predictions }: { circuitKey: string; predictions:
       )}
     </div>
   );
-}
+});
 
 export default function LivePage() {
   const [data, setData] = useState<SessionData | null>(null);
@@ -205,7 +207,7 @@ export default function LivePage() {
             </div>
           )}
           {data.circuit_key && (
-            <RaceMap circuitKey={data.circuit_key} predictions={data.predictions} />
+            <RaceMap circuitKey={data.circuit_key} sessionKey={String(data.session_key)} predictions={data.predictions} />
           )}
           <div className="space-y-3">
             {data.predictions.map((p, i) => <DriverCard key={p.driver_number} p={p} rank={i + 1} />)}

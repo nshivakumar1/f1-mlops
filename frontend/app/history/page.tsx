@@ -4,7 +4,7 @@ export const revalidate = 60;
 
 export default async function HistoryPage() {
   let sessions: string[] = [];
-  try { sessions = await fetchSessions(); } catch {}
+  try { sessions = await fetchSessions(); } catch (err) { console.error("fetchSessions failed:", err); }
 
   const sessionData = await Promise.all(
     sessions.slice(0, 10).map(async (sk) => {
@@ -36,11 +36,11 @@ export default async function HistoryPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-xs text-gray-500 border-b border-[#2a2a2a]">
-                      <th className="px-5 py-2 text-left">Driver</th>
-                      <th className="px-5 py-2 text-left">Team</th>
-                      <th className="px-5 py-2 text-left">Tyre</th>
-                      <th className="px-5 py-2 text-right">Pit Prob</th>
-                      <th className="px-5 py-2 text-right">Confidence</th>
+                      <th scope="col" className="px-5 py-2 text-left">Driver</th>
+                      <th scope="col" className="px-5 py-2 text-left">Team</th>
+                      <th scope="col" className="px-5 py-2 text-left">Tyre</th>
+                      <th scope="col" className="px-5 py-2 text-right">Pit Prob</th>
+                      <th scope="col" className="px-5 py-2 text-right">Confidence</th>
                     </tr>
                   </thead>
                   <tbody>

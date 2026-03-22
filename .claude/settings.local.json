@@ -7,7 +7,14 @@
       "Bash(python3 -m pytest tests/unit/test_openf1_client.py tests/unit/test_pitstop_model.py -v --tb=short)",
       "Bash(pip3 install pytest xgboost lightgbm scikit-learn pandas numpy --break-system-packages -q)",
       "Bash(brew install libomp -q)",
-      "Bash(python3 -m pytest tests/unit/ -v --tb=short)"
+      "Bash(python3 -m pytest tests/unit/ -v --tb=short)",
+      "Bash(gh repo create f1-mlops --public --description \"F1 Race Prediction MLOps Platform — Chinese GP 2026 | AWS SageMaker + OpenF1 + Terraform\" --source \"/Users/nakulshivakumar/Desktop/F1 MLOps\" --remote origin --push)",
+      "Bash(gh auth status)",
+      "Bash(gh repo create f1-mlops --public --description \"F1 Race Prediction MLOps Platform — Chinese GP 2026 | AWS SageMaker + OpenF1 + Terraform\" --source . --remote origin --push)",
+      "Bash(gh api user --jq .login)",
+      "Bash(gh repo view nshivakumar1/f1-mlops)",
+      "Bash(gh repo view nshivakumar1/f1-mlops --web)",
+      "Bash(gh repo view nshivakumar1/f1-mlops --json url,defaultBranchRef,diskUsage --jq '\"\"URL: \\\\\\(.url\\) | Branch: \\\\\\(.defaultBranchRef.name\\) | Size: \\\\\\(.diskUsage\\)KB\"\"')"
     ]
   }
 }

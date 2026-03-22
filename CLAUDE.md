@@ -46,7 +46,8 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 
 ### 8. OpenSearch Module — Deleted
 - `terraform/modules/opensearch/` was deleted entirely — it had an invalid `dashboard_endpoint` attribute
-- The project uses ELK on EC2, not AWS OpenSearch — do not recreate this module
+- The project does NOT use AWS OpenSearch or ELK — do not recreate either module
+- Observability is in New Relic (see #39)
 
 ### 9. Logstash 8.x Config Syntax
 - **Wrong:** Inline `if` syntax: `if [field] == true { mutate { ... } }`
@@ -156,7 +157,7 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 
 ### 25. Context Window Exhaustion — Agent Restart Loses In-Progress State
 
-- Long debugging sessions (Logstash + race day fixes + Gemini integration) can exhaust context
+- Long debugging sessions (New Relic + race day fixes + Lambda + Terraform) can exhaust context
 - When the agent is restarted, it resumes from a summary — in-progress edits that were identified but not yet applied are lost
 - **Prevention:** After identifying a fix, apply it immediately before moving on to the next investigation
 - **Recovery:** Check CLAUDE.md "Pending Tasks" and git log to reconstruct what was done vs what was pending
@@ -205,14 +206,14 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - **Correct:** Set Root Directory to `frontend` in Vercel dashboard → Project → Settings → General
 - `vercel.json` at repo root should only contain valid properties (e.g. `framework`)
 
-### 33. Terraform `templatefile()` — `\${VAR}` Does NOT Escape, Use `$${VAR}`
+### 32. Terraform `templatefile()` — `\${VAR}` Does NOT Escape, Use `$${VAR}`
 
 - `\${INSTANCE_ID}` in `.tpl` files is NOT an escape — Terraform still tries to interpolate it as a template variable
 - **Wrong:** `instance_id: \${INSTANCE_ID}` → `vars map does not contain key "INSTANCE_ID"`
 - **Correct:** `instance_id: $${INSTANCE_ID}` — `$$` is the escape, outputs literal `${INSTANCE_ID}` at runtime
 - Applies to any runtime shell/Metricbeat/Logstash variable references in `.tpl` files that should not be resolved by Terraform
 
-### 34. EC2 `user_data` 16 KB Limit — Use S3 Bootstrapper for Large Scripts
+### 33. EC2 `user_data` 16 KB Limit — Use S3 Bootstrapper for Large Scripts
 
 - EC2 `user_data` is limited to 16384 bytes raw; `elk_setup.sh.tpl` renders to ~22 KB
 - **Wrong:** `user_data = templatefile(...)` directly → `expected length of user_data to be in the range (0 - 16384)`
@@ -227,14 +228,14 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
   ```
 - Add `depends_on = [aws_s3_object.elk_setup]` to the `aws_instance` resource
 
-### 35. GitHub Actions `download-artifact@v4` — LCA Strips Common Path Prefix
+### 34. GitHub Actions `download-artifact@v4` — LCA Strips Common Path Prefix
 
 - When uploading multiple paths, `upload-artifact@v4` calculates the Least Common Ancestor (LCA) and strips it from paths inside the artifact
 - Uploading `terraform/environments/dev/tfplan.binary` + `terraform/modules/lambda/*.zip` → LCA is `terraform/`, stored internally as `environments/dev/tfplan.binary`
 - `download-artifact@v4` with `path: .` extracts to `./environments/dev/tfplan.binary` — missing the `terraform/` prefix
 - **Correct:** Use `path: terraform` on download to restore full `terraform/environments/dev/tfplan.binary` path
 
-### 36. Terraform State Drift — Import Existing Resources Before Apply
+### 35. Terraform State Drift — Import Existing Resources Before Apply
 
 - Resources created manually or in previous pipeline runs may exist in AWS but not in Terraform state
 - Apply will fail with `ConflictException` or `Duplicate` errors trying to recreate them
@@ -245,7 +246,7 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
   ```
 - After importing locally, push an empty commit to trigger a fresh plan (the old plan binary becomes stale after any state change)
 
-### 37. Terraform `archive_file` Re-Zips Source-Only in CI Deploy Job — Lambda Loses Dependencies
+### 36. Terraform `archive_file` Re-Zips Source-Only in CI Deploy Job — Lambda Loses Dependencies
 
 - `data "archive_file"` in Terraform re-runs during `terraform apply` in the deploy job context, which has no pip packages installed
 - Result: enrichment Lambda gets replaced with a ~9KB source-only ZIP → `No module named 'groq'` at runtime
@@ -255,40 +256,14 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - This step is now in `.github/workflows/ci.yml` after the `terraform apply` step
 - **Race day:** If a CI run was approved while the race is live, the Lambda will be broken for ~1 min until the redeploy step finishes — watch for `No module named 'groq'` errors in CloudWatch
 
-### 38. API Gateway `test-invoke-method` Bypasses Stage — Not a Reliable Proxy for Public URL
+### 37. API Gateway `test-invoke-method` Bypasses Stage — Not a Reliable Proxy for Public URL
 
 - `aws apigateway test-invoke-method` invokes the Lambda integration directly, bypassing the stage deployment entirely
 - A route can return 200 via test-invoke but 403 `MissingAuthenticationTokenException` via the public URL if the route was never included in a stage deployment
 - **Root cause:** Routes created via `terraform import` (without a full `terraform apply`) are in AWS config but not in the deployed stage snapshot
 - **Fix:** Delete and recreate the method + integration with `put-method` + `put-integration`, then `create-deployment`
 
-### 32. ELK/Kibana — RETIRED, Use Grafana for Everything
-
-- ELK was too complex to maintain: 22KB user_data limit, Logstash config syntax, `%{` escaping, Docker boot time
-- **Decision (2026-03-15):** Migrated ALL race visualizations to Grafana
-- Grafana now has two datasources: CloudWatch (infra) + Infinity (F1 REST API → live race predictions)
-- **Live race dashboard:** `http://<grafana-ip>:3000/d/f1-race-live` — auto-refresh 30s
-- **Infra dashboard:** `http://<grafana-ip>:3000/d/f1-infra-metrics` — Lambda/SageMaker CloudWatch metrics
-- ELK EC2 (`i-09b80fc03109c35a1`) is stopped — do NOT restart it unless specifically re-evaluating ELK
-
-### 33. Grafana 12 Dashboard API — Do NOT Set `schemaVersion` or Use Wrong Auth
-
-- **Wrong:** Creating dashboards via API with `"schemaVersion": 39` — causes panels to render "No data" silently even when CloudWatch query returns data
-- **Correct:** Omit `schemaVersion` entirely when POSTing dashboards via API, or clone structure from an existing working dashboard
-- **Wrong:** CloudWatch datasource `allowed_auth_providers` default (`default,keys,credentials`) blocks `ec2_iam_role` — panels show "No data" with error `"trying to use non-allowed auth method ec2_iam_role"`
-- **Correct:** Add `allowed_auth_providers = default,keys,credentials,ec2_iam_role` to `/etc/grafana/grafana.ini` under `[aws]` section, then restart Grafana
-- CloudWatch query format requires: `"queryMode": "Metrics"`, `"statistics": ["Average"]` (array not string), `"matchExact": true`
-- EC2 basic monitoring period is 5 minutes — use `"period": "300"` not `"period": "60"`
-
-### 34. Grafana Infinity Datasource — Install Before First Race
-
-- Infinity plugin (`yesoreyeram-infinity-datasource`) is not bundled with Grafana — must be installed
-- Already installed on current Grafana EC2 (`i-09c735935e93429d5`) — persists in `/var/lib/grafana/plugins/`
-- If instance is replaced: `ssh ubuntu@<ip> "sudo grafana-cli plugins install yesoreyeram-infinity-datasource && sudo systemctl restart grafana-server"`
-- Datasource UID: `cfg1tmj8jbu2oa` (created via API, persists in Grafana DB)
-- If datasource needs recreation after instance replacement, re-POST the datasource config via Grafana API
-
-### 39. New Lambda Functions — Must Be Added to CI Build Loop AND Artifact List
+### 38. New Lambda Functions — Must Be Added to CI Build Loop AND Artifact List
 
 - When a new Lambda function is added to Terraform, it **must** also be added to **three places** in `.github/workflows/ci.yml`:
   1. The build loop in the `plan` job: `for func in enrichment rest_handler prewarm slack_notifier prerace_check ...`
@@ -297,7 +272,7 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - **Failure mode:** Terraform apply succeeds but Lambda gets a ~5KB source-only ZIP (no pip deps) — `No module named '...'` at runtime
 - **Current Lambda list:** `enrichment`, `rest_handler`, `prewarm`, `slack_notifier`, `prerace_check`
 
-### 40. Grafana RETIRED — Do Not Recreate, Use New Relic
+### 39. Grafana RETIRED — Do Not Recreate, Use New Relic
 
 - Grafana EC2 (`i-09c735935e93429d5`) is STOPPED and retired as of 2026-03-19
 - **All observability is now in New Relic** (account ID `7941720`)
@@ -305,7 +280,7 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - Infra metrics: CloudWatch Metric Streams → Kinesis Firehose → NR (Lambda, SageMaker, Billing)
 - Do NOT recreate Grafana datasources, dashboards, or EC2 unless explicitly re-evaluating the observability stack
 
-### 41. Win Probability — Computed Inline, No Second SageMaker Endpoint
+### 40. Win Probability — Computed Inline, No Second SageMaker Endpoint
 
 - Win probability is computed in the enrichment Lambda (`compute_win_probabilities()`) after each pitstop batch
 - Uses live race state: gap ranking (40%), gap to leader (25%), team strength (20%), tyre freshness (10%), pitstop stability (5%)
@@ -314,7 +289,7 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - `win_probability` is returned in `/sessions/latest` and `/predict/positions/{session_key}` responses
 - `winProbability` is also sent as a field in New Relic `F1PitstopPrediction` custom events
 
-### 42. Pre-Race Health Check — Run Before Every Race
+### 41. Pre-Race Health Check — Run Before Every Race
 
 - Lambda: `f1-mlops-prerace-check` — invoke manually 30 min before lights out
 - Checks: SageMaker InService, OpenF1 API, Groq secret, NR license key, OpenF1 credentials, EventBridge poller state, S3 write, prewarm invoke
@@ -355,6 +330,30 @@ GitHub → GitHub Actions → [Test → Plan → Approve → Deploy]
 - **NR AWS integration role:** `arn:aws:iam::297997106614:role/f1-mlops-newrelic-integration` (register in NR UI → Infrastructure → AWS)
 - **Custom events query:** `SELECT * FROM F1PitstopPrediction SINCE 1 hour ago`
 - **Lambda layer ARN:** `arn:aws:lambda:us-east-1:451483290750:layer:NewRelicPython312:17`
+
+## Frontend Development
+
+```bash
+cd frontend
+npm install
+npm run dev        # Start dev server at http://localhost:3000
+npm run build      # Production build (verifies types + generates static pages)
+npm run start      # Serve production build locally
+```
+
+- Root Directory in Vercel dashboard is set to `frontend` — do NOT add `rootDirectory` to `vercel.json`
+- API base URL (`NEXT_PUBLIC_API_URL`) must point to the API Gateway stage URL for live data
+- `/history` page is server-rendered (dynamic) — API is called at request time, not build time
+
+## Python Lambda Tests
+
+```bash
+pytest tests/unit/ -v           # Run all unit tests
+pytest tests/unit/test_enrichment.py -v  # Single test file
+```
+
+- Tests use `MOCK_SESSION_DATA` dict — no API mocking needed (see Known Mistake #19)
+- Always run before pushing after any Lambda code changes
 
 ## Key File Paths
 - `buildspec.yml` — CodeBuild spec (calls `scripts/ci_build.sh`)

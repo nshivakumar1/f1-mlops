@@ -3,8 +3,8 @@ export default function AboutPage() {
     { layer: "Data Source", tech: "OpenF1 API", detail: "Live telemetry — tyre age, gaps, compounds, safety car" },
     { layer: "Prediction Engine", tech: "XGBoost on AWS SageMaker", detail: "Serverless endpoint, 11 engineered features, updated every 30s" },
     { layer: "Commentary", tech: "Groq (Llama 3.3 70B)", detail: "Natural language race strategy insights generated per lap" },
-    { layer: "Orchestration", tech: "AWS Lambda + EventBridge", detail: "4 Lambda functions, enrichment fires every 60s during sessions" },
-    { layer: "Storage", tech: "S3 + Elasticsearch", detail: "Raw predictions in S3, real-time indexing via Logstash → ELK" },
+    { layer: "Orchestration", tech: "AWS Lambda + EventBridge", detail: "5 Lambda functions (enrichment, rest_handler, prewarm, slack_notifier, prerace_check), enrichment fires every 60s during sessions" },
+    { layer: "Storage", tech: "S3 + New Relic", detail: "Raw predictions in S3, live metrics and observability via New Relic" },
     { layer: "Alerts", tech: "CloudWatch → SNS → AWS Chatbot", detail: "Slack alerts for model drift, Lambda errors, billing cap" },
     { layer: "CI/CD", tech: "AWS CodePipeline + GitHub Actions", detail: "5-stage pipeline: Test → Plan → Approve → Deploy via Terraform" },
     { layer: "Frontend", tech: "Next.js → Vercel", detail: "Live predictions, race history, AI commentary — updates every 30s" },
@@ -21,7 +21,7 @@ export default function AboutPage() {
       <h2 className="text-lg font-bold mb-4 text-gray-300">Architecture</h2>
       <div className="bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] overflow-hidden mb-10">
         <div className="px-5 py-3 border-b border-[#2a2a2a] text-xs text-gray-500 font-mono">
-          OpenF1 → Lambda → SageMaker → S3 / ELK → API Gateway → This UI
+          OpenF1 → Lambda → SageMaker → S3 / New Relic → API Gateway → This UI
         </div>
         <div className="divide-y divide-[#2a2a2a]">
           {stack.map((s) => (
