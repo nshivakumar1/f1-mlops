@@ -1,16 +1,23 @@
 """
 AI commentary client — uses Groq (Llama 3.3 70B) for live race strategy insights.
 Free tier: 14,400 req/day, no credit card required (console.groq.com).
-API key stored in Secrets Manager: f1-mlops/gemini-api-key
+API key stored in Secrets Manager: f1-mlops/gemini-api-key (name kept for backward compat).
+Secret name configurable via GROQ_SECRET_NAME env var.
 Cached at module level with 1hr TTL.
 """
 import json
 import logging
+import os
 import time
 import boto3
 from groq import Groq
 
 logger = logging.getLogger(__name__)
+
+_GROQ_SECRET_NAME = os.environ.get("GROQ_SECRET_NAME", "f1-mlops/gemini-api-key")
+_AWS_REGION = os.environ.get("AWS_REGION_NAME", "us-east-1")
+
+_sm = boto3.client("secretsmanager", region_name=_AWS_REGION)
 
 _api_key_cache: dict = {}
 _KEY_TTL = 3600
@@ -20,8 +27,7 @@ def _get_api_key() -> str:
     now = time.time()
     if _api_key_cache.get("key") and now - _api_key_cache.get("fetched_at", 0) < _KEY_TTL:
         return _api_key_cache["key"]
-    client = boto3.client("secretsmanager", region_name="us-east-1")
-    resp = client.get_secret_value(SecretId="f1-mlops/gemini-api-key")
+    resp = _sm.get_secret_value(SecretId=_GROQ_SECRET_NAME)
     raw = resp["SecretString"]
     try:
         key = json.loads(raw)["api_key"]
@@ -44,18 +50,22 @@ def generate_race_commentary(predictions: list, safety_car: bool, session_key: s
         key = _get_api_key()
         client = Groq(api_key=key)
 
-        top = sorted(predictions, key=lambda p: p.get("pitstop_probability", 0), reverse=True)[:3]
+        top = sorted(
+            predictions,
+            key=lambda p: p.get("prediction", {}).get("pitstop_probability", 0),
+            reverse=True,
+        )[:3]
 
         driver_lines = []
-        for p in top:
+        for rank, p in enumerate(top, start=1):
             driver = p.get("driver_name", p.get("driver", "Unknown"))
             team = p.get("team", "")
-            prob = p.get("pitstop_probability", 0) * 100
+            prob = p.get("prediction", {}).get("pitstop_probability", 0) * 100
             tyre = p.get("tyre_compound", "?")
-            age = p.get("tyre_age", "?")
-            pos = p.get("position", "?")
+            features = p.get("features") or []
+            age = features[0] if features else "?"
             driver_lines.append(
-                f"  P{pos} {driver} ({team}): {prob:.0f}% pitstop probability, "
+                f"  P{rank} {driver} ({team}): {prob:.0f}% pitstop probability, "
                 f"{tyre} tyres aged {age} laps"
             )
 

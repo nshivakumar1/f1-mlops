@@ -5,10 +5,19 @@ Triggered by SNS topic alongside AWS Chatbot.
 """
 import json
 import os
+import time
 import urllib.request
 import urllib.error
 import boto3
 import logging
+import sentry_sdk
+
+sentry_sdk.init(
+    dsn=os.environ.get("SENTRY_DSN", ""),
+    environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+    traces_sample_rate=0.1,
+    enable_logs=True,
+)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -17,6 +26,9 @@ SLACK_SECRET_NAME = os.environ.get("SLACK_SECRET_NAME", "f1-mlops/slack-bot-toke
 AWS_REGION = os.environ.get("AWS_REGION_NAME", "us-east-1")
 
 secrets_client = boto3.client("secretsmanager", region_name=AWS_REGION)
+
+_token_cache: dict = {}
+_TOKEN_TTL = 3600
 
 # Team accent colours for Block Kit headers
 TEAM_COLORS = {
@@ -35,9 +47,14 @@ TEAM_COLORS = {
 
 
 def get_slack_token() -> str:
+    now = time.time()
+    if _token_cache.get("token") and now - _token_cache.get("fetched_at", 0) < _TOKEN_TTL:
+        return _token_cache["token"]
     response = secrets_client.get_secret_value(SecretId=SLACK_SECRET_NAME)
-    secret = json.loads(response["SecretString"])
-    return secret["bot_token"]
+    token = json.loads(response["SecretString"])["bot_token"]
+    _token_cache["token"] = token
+    _token_cache["fetched_at"] = now
+    return token
 
 
 def build_pitstop_alert_blocks(data: dict) -> list:

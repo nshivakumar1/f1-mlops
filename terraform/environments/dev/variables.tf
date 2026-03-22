@@ -57,3 +57,10 @@ variable "newrelic_layer_arn" {
   type        = string
   default     = "arn:aws:lambda:us-east-1:451483290750:layer:NewRelicPython312:17"
 }
+
+variable "sentry_dsn" {
+  description = "Sentry DSN — set via TF_VAR_sentry_dsn or terraform.tfvars (leave empty to disable)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}

@@ -14,6 +14,7 @@ import urllib.request
 import urllib.error
 import boto3
 import logging
+import sentry_sdk
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from openf1_client import (
@@ -22,10 +23,17 @@ from openf1_client import (
     get_latest_session,
     ALL_DRIVER_NUMBERS,
 )
-from gemini_client import generate_race_commentary
+from groq_client import generate_race_commentary
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+sentry_sdk.init(
+    dsn=os.environ.get("SENTRY_DSN", ""),
+    environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+    traces_sample_rate=0.1,
+    enable_logs=True,
+)
 
 S3_BUCKET = os.environ["S3_BUCKET"]
 SAGEMAKER_ENDPOINT = os.environ["SAGEMAKER_ENDPOINT"]
@@ -404,10 +412,10 @@ def lambda_handler(event, context):
     if predictions:
         predictions = compute_win_probabilities(predictions, safety_car_active)
 
-    # ── 5c. Gemini race commentary (non-blocking — failure returns "") ────────
+    # ── 5c. Groq race commentary (non-blocking — failure returns "") ─────────
     commentary = generate_race_commentary(predictions, safety_car_active, session_key)
     if commentary:
-        logger.info(f"Gemini commentary: {commentary[:80]}...")
+        logger.info(f"Groq commentary: {commentary[:80]}...")
 
     # ── 5d. Fire SNS alerts with commentary attached ─────────────────────────
     if driver_features:

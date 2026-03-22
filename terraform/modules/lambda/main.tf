@@ -47,7 +47,10 @@ resource "aws_lambda_function" "enrichment" {
       SAGEMAKER_ENDPOINT = var.sagemaker_endpoint
       SNS_TOPIC_ARN      = var.sns_topic_arn
       AWS_REGION_NAME    = var.aws_region
-      GEMINI_SECRET_NAME = "f1-mlops/gemini-api-key"
+      GROQ_SECRET_NAME   = "f1-mlops/gemini-api-key"
+      # Sentry
+      SENTRY_DSN         = var.sentry_dsn
+      SENTRY_ENVIRONMENT = var.sentry_environment
       # New Relic APM
       NEW_RELIC_LAMBDA_HANDLER               = "handler.lambda_handler"
       NEW_RELIC_ACCOUNT_ID                   = var.newrelic_account_id
@@ -80,6 +83,9 @@ resource "aws_lambda_function" "rest_handler" {
       S3_BUCKET          = var.s3_bucket
       SAGEMAKER_ENDPOINT = var.sagemaker_endpoint
       AWS_REGION_NAME    = var.aws_region
+      # Sentry
+      SENTRY_DSN         = var.sentry_dsn
+      SENTRY_ENVIRONMENT = var.sentry_environment
       # New Relic APM
       NEW_RELIC_LAMBDA_HANDLER               = "handler.lambda_handler"
       NEW_RELIC_ACCOUNT_ID                   = var.newrelic_account_id
@@ -108,6 +114,9 @@ resource "aws_lambda_function" "prewarm" {
     variables = {
       SAGEMAKER_ENDPOINT = var.sagemaker_endpoint
       AWS_REGION_NAME    = var.aws_region
+      # Sentry
+      SENTRY_DSN         = var.sentry_dsn
+      SENTRY_ENVIRONMENT = var.sentry_environment
       # New Relic APM
       NEW_RELIC_LAMBDA_HANDLER               = "handler.lambda_handler"
       NEW_RELIC_ACCOUNT_ID                   = var.newrelic_account_id
@@ -134,6 +143,9 @@ resource "aws_lambda_function" "slack_notifier" {
     variables = {
       SLACK_SECRET_NAME = "f1-mlops/slack-bot-token"
       AWS_REGION_NAME   = var.aws_region
+      # Sentry
+      SENTRY_DSN         = var.sentry_dsn
+      SENTRY_ENVIRONMENT = var.sentry_environment
       # New Relic APM
       NEW_RELIC_LAMBDA_HANDLER               = "handler.lambda_handler"
       NEW_RELIC_ACCOUNT_ID                   = var.newrelic_account_id
@@ -163,6 +175,9 @@ resource "aws_lambda_function" "prerace_check" {
       AWS_REGION_NAME       = var.aws_region
       PREWARM_FUNCTION_NAME = "${var.project}-prewarm"
       EVENTBRIDGE_RULE_NAME = "${var.project}-live-poller"
+      # Sentry
+      SENTRY_DSN         = var.sentry_dsn
+      SENTRY_ENVIRONMENT = var.sentry_environment
       # New Relic APM
       NEW_RELIC_LAMBDA_HANDLER               = "handler.lambda_handler"
       NEW_RELIC_ACCOUNT_ID                   = var.newrelic_account_id

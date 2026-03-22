@@ -289,6 +289,27 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - `win_probability` is returned in `/sessions/latest` and `/predict/positions/{session_key}` responses
 - `winProbability` is also sent as a field in New Relic `F1PitstopPrediction` custom events
 
+### 42. AI Commentary Module — File is `groq_client.py`, Not `gemini_client.py`
+
+- `lambda/enrichment/gemini_client.py` was renamed to `groq_client.py` (2026-03-23)
+- Terraform env var for enrichment Lambda: `GROQ_SECRET_NAME = "f1-mlops/gemini-api-key"`
+- `groq_client.py` reads `GROQ_SECRET_NAME` from env (fallback: `f1-mlops/gemini-api-key`)
+- Secret name in AWS is still `f1-mlops/gemini-api-key` — do NOT rename it (see #29)
+
+### 43. Prediction Dict Structure — `pitstop_probability` Is Nested
+
+- Top-level prediction dict keys: `driver_number`, `driver_name`, `team`, `features` (list[11]), `tyre_compound`, `win_probability`, `prediction` (nested dict)
+- **Wrong:** `p.get("pitstop_probability")` → always returns `None`
+- **Correct:** `p.get("prediction", {}).get("pitstop_probability", 0)`
+- `tyre_age` is at `p["features"][0]`, not `p.get("tyre_age")`
+
+### 44. Sentry Error Tracking — Integrated but Opt-In
+
+- `sentry-sdk>=2.0.0` in all 5 Lambda `requirements.txt`; `sentry_sdk.init()` at module level in each handler
+- Controlled by `SENTRY_DSN` env var — empty string disables Sentry silently (safe to deploy without it)
+- Set via `TF_VAR_sentry_dsn=https://...@....ingest.sentry.io/...` or `terraform.tfvars`
+- `SENTRY_ENVIRONMENT` defaults to Terraform `var.environment`
+
 ### 41. Pre-Race Health Check — Run Before Every Race
 
 - Lambda: `f1-mlops-prerace-check` — invoke manually 30 min before lights out
@@ -417,9 +438,10 @@ pytest tests/unit/test_enrichment.py -v  # Single test file
    aws events disable-rule --name f1-mlops-live-poller --region us-east-1
    ```
 
-## Current State (as of 2026-03-19)
+## Current State (as of 2026-03-23)
 
-- **Enrichment Lambda:** Groq commentary + `win_probability` computed inline (position/gap/tyre/team scoring)
+- **Enrichment Lambda:** Groq commentary (`groq_client.py`) + `win_probability` computed inline (position/gap/tyre/team scoring)
+- **Sentry:** Integrated across all 5 Lambdas — activate by setting `TF_VAR_sentry_dsn` before `terraform apply`
 - **REST handler:** `/sessions/latest` and `/predict/positions/{session_key}` return `win_probability` per driver
 - **Pre-race check Lambda:** `f1-mlops-prerace-check` — validates 8 systems before race start
 - **Slack notifier:** AWS Chatbot → #f1-race-alerts (CloudWatch Alarms only — NR alerts go to email)

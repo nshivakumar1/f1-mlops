@@ -27,6 +27,8 @@ _token_cache: dict = {"access_token": None, "expires_at": 0.0}
 _weather_cache: dict = {}        # session_key → {"data": ..., "fetched_at": float}
 _WEATHER_TTL = 300               # refresh weather every 5 min (catches mid-race rain)
 
+_sm = boto3.client("secretsmanager", region_name=_AWS_REGION)
+
 
 def _get_auth_token(force_refresh: bool = False) -> str:
     """Return a valid OAuth2 bearer token, refreshing if needed."""
@@ -34,8 +36,7 @@ def _get_auth_token(force_refresh: bool = False) -> str:
     if not force_refresh and _token_cache["access_token"] and now < _token_cache["expires_at"]:
         return _token_cache["access_token"]
 
-    sm = boto3.client("secretsmanager", region_name=_AWS_REGION)
-    secret = json.loads(sm.get_secret_value(SecretId=_SECRET_NAME)["SecretString"])
+    secret = json.loads(_sm.get_secret_value(SecretId=_SECRET_NAME)["SecretString"])
 
     body = urllib.parse.urlencode({
         "grant_type": "password",

@@ -11,7 +11,15 @@ import boto3
 import logging
 import urllib.request
 import urllib.error
+import sentry_sdk
 from datetime import datetime, timezone
+
+sentry_sdk.init(
+    dsn=os.environ.get("SENTRY_DSN", ""),
+    environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+    traces_sample_rate=0.1,
+    enable_logs=True,
+)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -245,7 +253,7 @@ def handle_live_positions() -> dict:
         return _response(200, {"session_key": session_key, "positions": list(latest.values())})
     except urllib.error.HTTPError as e:
         logger.warning(f"OpenF1 positions HTTP {e.code}")
-        return _response(200, {"session_key": session_key if "session_key" in dir() else "unknown", "positions": []})
+        return _response(200, {"session_key": session_key, "positions": []})
     except Exception as e:
         logger.error(f"Error fetching live positions: {e}")
         return _response(200, {"positions": []})

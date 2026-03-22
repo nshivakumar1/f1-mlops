@@ -59,6 +59,8 @@ module "lambda" {
   sns_topic_arn       = module.cloudwatch.sns_topic_arn
   newrelic_layer_arn  = var.newrelic_layer_arn
   newrelic_account_id = var.newrelic_account_id
+  sentry_dsn          = var.sentry_dsn
+  sentry_environment  = var.environment
 }
 
 module "eventbridge" {

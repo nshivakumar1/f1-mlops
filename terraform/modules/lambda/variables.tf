@@ -17,3 +17,16 @@ variable "newrelic_account_id" {
   type        = string
 }
 
+variable "sentry_dsn" {
+  description = "Sentry DSN for error tracking (leave empty to disable)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "sentry_environment" {
+  description = "Sentry environment tag (e.g. production, staging)"
+  type        = string
+  default     = "production"
+}
+

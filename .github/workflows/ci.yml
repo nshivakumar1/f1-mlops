@@ -104,18 +104,25 @@ jobs:
               continue
             fi
             mkdir -p "build/${func}"
-            if [ -f "${src}/requirements.txt" ]; then
-              echo "Installing ${func} deps (manylinux2014_x86_64)..."
+            if [ -f "${src}/requirements.txt" ] && grep -qvE '^\s*#|^\s*$' "${src}/requirements.txt"; then
+              echo "Installing ${func} deps..."
+              # Pass 1: manylinux binary wheels (native extensions, e.g., groq/grpcio)
+              # Silently ignore packages that have no manylinux wheel (e.g., pure-Python)
               pip install --quiet \
                 --platform manylinux2014_x86_64 \
                 --implementation cp \
                 --python-version 3.12 \
                 --only-binary=:all: \
                 -r "${src}/requirements.txt" \
+                -t "build/${func}/" 2>/dev/null || true
+              # Pass 2: pure-Python wheels (none-any, e.g., sentry-sdk) skipped by pass 1
+              # Runner is x86_64 Linux so native installs are Lambda-compatible
+              pip install --quiet \
+                --only-binary=:all: \
+                -r "${src}/requirements.txt" \
                 -t "build/${func}/"
-              # Fail loudly if manylinux install didn't produce deps
               if [ -z "$(ls -A build/${func}/)" ]; then
-                echo "::error::manylinux install for ${func} produced empty build dir"
+                echo "::error::pip install for ${func} produced empty build dir"
                 exit 1
               fi
             fi
