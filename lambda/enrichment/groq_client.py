@@ -23,10 +23,11 @@ _api_key_cache: dict = {}
 _KEY_TTL = 3600
 
 
-def _get_api_key() -> str:
+def _get_client() -> Groq:
+    """Return a cached Groq client, refreshing when the API key TTL expires."""
     now = time.time()
     if _api_key_cache.get("key") and now - _api_key_cache.get("fetched_at", 0) < _KEY_TTL:
-        return _api_key_cache["key"]
+        return _api_key_cache["client"]
     resp = _sm.get_secret_value(SecretId=_GROQ_SECRET_NAME)
     raw = resp["SecretString"]
     try:
@@ -35,7 +36,8 @@ def _get_api_key() -> str:
         key = raw.strip()
     _api_key_cache["key"] = key
     _api_key_cache["fetched_at"] = now
-    return key
+    _api_key_cache["client"] = Groq(api_key=key)
+    return _api_key_cache["client"]
 
 
 def generate_race_commentary(predictions: list, safety_car: bool, session_key: str) -> str:
@@ -47,8 +49,7 @@ def generate_race_commentary(predictions: list, safety_car: bool, session_key: s
     if not predictions:
         return ""
     try:
-        key = _get_api_key()
-        client = Groq(api_key=key)
+        client = _get_client()
 
         top = sorted(
             predictions,

@@ -70,6 +70,19 @@ def _response(status_code: int, body: dict) -> dict:
     }
 
 
+def _format_prediction(p: dict) -> dict:
+    return {
+        "driver_number": p["driver_number"],
+        "driver_name": p["driver_name"],
+        "team": p["team"],
+        "tyre_compound": p.get("tyre_compound"),
+        "tyre_age": p["features"][0],
+        "pitstop_probability": p["prediction"].get("pitstop_probability", 0),
+        "confidence": p["prediction"].get("confidence", 0),
+        "win_probability": p.get("win_probability", 0.0),
+    }
+
+
 def handle_pitstop_post(body: dict) -> dict:
     """
     POST /predict/pitstop
@@ -84,7 +97,7 @@ def handle_pitstop_post(body: dict) -> dict:
         })
 
     # Apply feature engineering to match training features (11 total)
-    tyre_age, stint_number, gap, air_temp, track_temp, rainfall, sector_delta = features
+    tyre_age, stint_number, _, _, track_temp, rainfall, sector_delta = features
     engineered = features + [
         tyre_age ** 2,                        # tyre_age_sq
         track_temp * tyre_age / 100.0,        # heat_deg_interaction
@@ -134,16 +147,7 @@ def handle_positions_get(session_key: str) -> dict:
             "safety_car_active": data.get("safety_car_active", False),
             "commentary": data.get("commentary", ""),
             "predictions": [
-                {
-                    "driver_number": p["driver_number"],
-                    "driver_name": p["driver_name"],
-                    "team": p["team"],
-                    "tyre_compound": p.get("tyre_compound"),
-                    "tyre_age": p["features"][0],
-                    "pitstop_probability": p["prediction"].get("pitstop_probability", 0),
-                    "confidence": p["prediction"].get("confidence", 0),
-                    "win_probability": p.get("win_probability", 0.0),
-                }
+                _format_prediction(p)
                 for p in sorted(
                     data.get("predictions", []),
                     key=lambda x: x["prediction"].get("pitstop_probability", 0),
@@ -196,16 +200,7 @@ def handle_latest_session() -> dict:
             "processing_time_ms": data.get("processing_time_ms"),
             "commentary": data.get("commentary", ""),
             "predictions": [
-                {
-                    "driver_number": p["driver_number"],
-                    "driver_name": p["driver_name"],
-                    "team": p["team"],
-                    "tyre_compound": p.get("tyre_compound"),
-                    "tyre_age": p["features"][0],
-                    "pitstop_probability": p["prediction"].get("pitstop_probability", 0),
-                    "confidence": p["prediction"].get("confidence", 0),
-                    "win_probability": p.get("win_probability", 0.0),
-                }
+                _format_prediction(p)
                 for p in sorted(
                     data.get("predictions", []),
                     key=lambda x: x["prediction"].get("pitstop_probability", 0),
@@ -256,7 +251,7 @@ def handle_live_positions() -> dict:
         return _response(200, {"session_key": session_key, "positions": []})
     except Exception as e:
         logger.error(f"Error fetching live positions: {e}")
-        return _response(200, {"positions": []})
+        return _response(200, {"session_key": session_key, "positions": []})
 
 
 def handle_track_layout(circuit_key: str) -> dict:

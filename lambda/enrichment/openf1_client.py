@@ -7,6 +7,7 @@ Credentials stored in Secrets Manager: f1-mlops/openf1-credentials
 """
 import json
 import logging
+import os
 import time
 import urllib.request
 import urllib.parse
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://api.openf1.org/v1"
 _TOKEN_URL = "https://api.openf1.org/token"
 _SECRET_NAME = "f1-mlops/openf1-credentials"
-_AWS_REGION = "us-east-1"
+_AWS_REGION = os.environ.get("AWS_REGION_NAME", "us-east-1")
 
 # Module-level caches — survive warm Lambda invocations
 _token_cache: dict = {"access_token": None, "expires_at": 0.0}

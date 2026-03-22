@@ -9,13 +9,13 @@ Lambda Enrichment Function
 """
 import json
 import os
+import threading
 import time
 import urllib.request
 import urllib.error
 import boto3
 import logging
 import sentry_sdk
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from openf1_client import (
     build_feature_vector,
@@ -48,6 +48,14 @@ sagemaker_runtime = boto3.client("sagemaker-runtime", region_name=AWS_REGION)
 cloudwatch = boto3.client("cloudwatch", region_name=AWS_REGION)
 sns = boto3.client("sns", region_name=AWS_REGION)
 secretsmanager = boto3.client("secretsmanager", region_name=AWS_REGION)
+
+ALERT_PROBABILITY_THRESHOLD = 0.85
+
+TEAM_SCORES = {
+    "McLaren": 0.95, "Ferrari": 0.90, "Red Bull": 0.88, "Mercedes": 0.85,
+    "Williams": 0.65, "Aston Martin": 0.70, "Alpine": 0.60, "Haas": 0.55,
+    "Racing Bulls": 0.62, "Audi": 0.50, "Cadillac": 0.45,
+}
 
 # Cached NR license key — fetched once per warm container
 _newrelic_license_key: str = ""
@@ -129,11 +137,6 @@ def compute_win_probabilities(predictions: list, safety_car_active: bool) -> lis
     Uses position (gap ranking), gap, tyre freshness, team strength, and pitstop risk.
     No second model endpoint needed — computed inline each lap.
     """
-    TEAM_SCORES = {
-        "McLaren": 0.95, "Ferrari": 0.90, "Red Bull": 0.88, "Mercedes": 0.85,
-        "Williams": 0.65, "Aston Martin": 0.70, "Alpine": 0.60, "Haas": 0.55,
-        "Racing Bulls": 0.62, "Audi": 0.50, "Cadillac": 0.45,
-    }
     if not predictions:
         return predictions
 
@@ -169,13 +172,17 @@ def compute_win_probabilities(predictions: list, safety_car_active: bool) -> lis
 
 
 def check_safety_car(session_data: dict) -> bool:
-    """Check if safety car is active from already-fetched race control messages."""
+    """Check if safety car is active from already-fetched race control messages.
+    Sorts by date descending and returns on the first flag-bearing message found.
+    """
     messages = session_data.get("race_control", [])
-    for msg in reversed(messages[-10:]):
+    for msg in sorted(messages, key=lambda m: m.get("date", ""), reverse=True):
         flag = (msg.get("flag") or "").upper()
         message = (msg.get("message") or "").upper()
-        if "SAFETY CAR" in message or flag in ("SC", "VSC"):
+        if flag in ("SC", "VSC") or "SAFETY CAR" in message:
             return True
+        if flag == "GREEN" or "GREEN FLAG" in message:
+            return False
     return False
 
 
@@ -202,7 +209,7 @@ def publish_alerts(alert_predictions: list):
         except Exception as e:
             logger.warning(f"SNS publish failed for {p['driver_name']}: {e}")
 
-    with ThreadPoolExecutor(max_workers=len(alert_predictions)) as pool:
+    with ThreadPoolExecutor(max_workers=5) as pool:
         list(pool.map(_publish, alert_predictions))
 
 
@@ -217,7 +224,7 @@ def publish_metrics_async(predictions: list):
             if not confidences:
                 return
             avg_confidence = sum(confidences) / len(confidences)
-            high_confidence_count = sum(1 for c in confidences if c > 0.85)
+            high_confidence_count = sum(1 for c in confidences if c > ALERT_PROBABILITY_THRESHOLD)
             cloudwatch.put_metric_data(
                 Namespace="F1MLOps/Models",
                 MetricData=[
@@ -238,7 +245,7 @@ def publish_metrics_async(predictions: list):
         except Exception as e:
             logger.warning(f"CloudWatch publish failed: {e}")
 
-    ThreadPoolExecutor(max_workers=1).submit(_publish)
+    threading.Thread(target=_publish, daemon=True).start()
 
 
 def push_to_newrelic(predictions: list, session_key: str, safety_car_active: bool, commentary: str = ""):
@@ -287,7 +294,7 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
         except Exception as e:
             logger.warning(f"New Relic event push failed (non-critical): {e}")
 
-    ThreadPoolExecutor(max_workers=1).submit(_push)
+    threading.Thread(target=_push, daemon=True).start()
 
 
 def push_logstash_async(payload: dict):
@@ -307,7 +314,7 @@ def push_logstash_async(payload: dict):
         except Exception as e:
             logger.warning(f"Logstash push failed (non-critical): {e}")
 
-    ThreadPoolExecutor(max_workers=1).submit(_push)
+    threading.Thread(target=_push, daemon=True).start()
 
 
 def lambda_handler(event, context):
@@ -422,7 +429,7 @@ def lambda_handler(event, context):
         alert_queue_with_commentary = [
             {**p, "commentary": commentary}
             for p in predictions
-            if p.get("prediction", {}).get("pitstop_probability", 0) > 0.85
+            if p.get("prediction", {}).get("pitstop_probability", 0) > ALERT_PROBABILITY_THRESHOLD
         ]
         if alert_queue_with_commentary:
             publish_alerts(alert_queue_with_commentary)
