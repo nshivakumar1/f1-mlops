@@ -151,6 +151,8 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
 
       - name: Terraform plan
+        env:
+          TF_VAR_sentry_dsn: ${{ secrets.TF_VAR_SENTRY_DSN }}
         run: |
           set -o pipefail
           terraform plan -input=false -no-color -out=tfplan.binary 2>&1 | tee plan_output.txt
