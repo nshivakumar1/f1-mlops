@@ -33,7 +33,7 @@ resource "aws_lambda_function" "enrichment" {
   function_name    = "${var.project}-enrichment"
   filename         = data.archive_file.enrichment.output_path
   source_code_hash = data.archive_file.enrichment.output_base64sha256
-  handler          = "newrelic_lambda_wrapper.handler.handler"
+  handler          = "newrelic_lambda_wrapper.handler"
   runtime          = "python3.12"
   memory_size      = 512
   timeout          = 60
@@ -71,7 +71,7 @@ resource "aws_lambda_function" "rest_handler" {
   function_name    = "${var.project}-rest-handler"
   filename         = data.archive_file.rest_handler.output_path
   source_code_hash = data.archive_file.rest_handler.output_base64sha256
-  handler          = "newrelic_lambda_wrapper.handler.handler"
+  handler          = "newrelic_lambda_wrapper.handler"
   runtime          = "python3.12"
   memory_size      = 256
   timeout          = 10
@@ -103,7 +103,7 @@ resource "aws_lambda_function" "prewarm" {
   function_name    = "${var.project}-prewarm"
   filename         = data.archive_file.prewarm.output_path
   source_code_hash = data.archive_file.prewarm.output_base64sha256
-  handler          = "newrelic_lambda_wrapper.handler.handler"
+  handler          = "newrelic_lambda_wrapper.handler"
   runtime          = "python3.12"
   memory_size      = 128
   timeout          = 30
@@ -132,7 +132,7 @@ resource "aws_lambda_function" "slack_notifier" {
   function_name    = "${var.project}-slack-notifier"
   filename         = data.archive_file.slack_notifier.output_path
   source_code_hash = data.archive_file.slack_notifier.output_base64sha256
-  handler          = "newrelic_lambda_wrapper.handler.handler"
+  handler          = "newrelic_lambda_wrapper.handler"
   runtime          = "python3.12"
   memory_size      = 128
   timeout          = 10
@@ -161,7 +161,7 @@ resource "aws_lambda_function" "prerace_check" {
   function_name    = "${var.project}-prerace-check"
   filename         = data.archive_file.prerace_check.output_path
   source_code_hash = data.archive_file.prerace_check.output_base64sha256
-  handler          = "newrelic_lambda_wrapper.handler.handler"
+  handler          = "newrelic_lambda_wrapper.handler"
   runtime          = "python3.12"
   memory_size      = 256
   timeout          = 60

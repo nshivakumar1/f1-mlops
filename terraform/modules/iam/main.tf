@@ -82,12 +82,12 @@ resource "aws_iam_role_policy" "lambda_custom" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:PutObject", "s3:ListBucket"]
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:ListBucket", "s3:DeleteObject"]
         Resource = [var.s3_bucket, "${var.s3_bucket}/*"]
       },
       {
         Effect   = "Allow"
-        Action   = ["sagemaker:InvokeEndpoint"]
+        Action   = ["sagemaker:InvokeEndpoint", "sagemaker:DescribeEndpoint"]
         Resource = "arn:aws:sagemaker:${var.aws_region}:${var.account_id}:endpoint/*"
       },
       {
@@ -104,6 +104,16 @@ resource "aws_iam_role_policy" "lambda_custom" {
         Effect   = "Allow"
         Action   = ["cloudwatch:PutMetricData", "cloudwatch:DescribeAlarms", "cloudwatch:SetAlarmState"]
         Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["events:DescribeRule"]
+        Resource = "arn:aws:events:${var.aws_region}:${var.account_id}:rule/*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = "arn:aws:lambda:${var.aws_region}:${var.account_id}:function:${var.project}-*"
       }
     ]
   })
