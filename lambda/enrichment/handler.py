@@ -271,7 +271,7 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
                     "pitstopProbability": pred.get("pitstop_probability", 0.0),
                     "confidence": pred.get("confidence", 0.0),
                     "tyreCompound": p.get("tyre_compound", "UNKNOWN"),
-                    "tyreAge": p.get("tyre_age", 0),
+                    "tyreAge": p["features"][0] if p.get("features") else 0,
                     "lapNumber": p.get("lap_number", 0),
                     "safetyCarActive": safety_car_active,
                     "winProbability": p.get("win_probability", 0.0),

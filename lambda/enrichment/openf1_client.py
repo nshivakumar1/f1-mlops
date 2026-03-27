@@ -232,7 +232,8 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
     try:
         stints = session_data["stints"].get(driver_number, [])
         intervals = session_data["intervals"].get(driver_number, [])
-        laps = session_data["laps"].get(driver_number, [])[-4:]
+        all_laps = session_data["laps"].get(driver_number, [])
+        laps = all_laps[-4:]  # last 4 laps only used for sector_delta
         weather = session_data["weather"]
     except Exception as e:
         logger.warning(f"build_feature_vector driver={driver_number}: {type(e).__name__}: {e}")
@@ -247,9 +248,9 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
     if lap_end:
         tyre_age = lap_end - lap_start
     else:
-        # Count laps completed since this stint started using fresh lap records
-        laps_in_stint = [l for l in laps if (l.get("lap_number") or 0) >= lap_start]
-        tyre_age = len(laps_in_stint) if laps_in_stint else len(laps)
+        # Count laps completed since this stint started using full lap records
+        laps_in_stint = [l for l in all_laps if (l.get("lap_number") or 0) >= lap_start]
+        tyre_age = len(laps_in_stint) if laps_in_stint else len(all_laps)
     stint_number = current_stint.get("stint_number", 1)
 
     # Feature 2: gap_to_leader
