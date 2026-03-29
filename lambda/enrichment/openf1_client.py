@@ -115,6 +115,11 @@ def _get(endpoint: str, params: dict, since: str = None, _retry: bool = True) ->
             return _get(endpoint, params, since=since, _retry=False)
         if e.code == 404:
             return []
+        if e.code == 429 and _retry:
+            # OpenF1 rate limit: 6 req/s — back off and retry once
+            logger.warning(f"OpenF1 429 rate-limit on {endpoint}, backing off 1.5s")
+            time.sleep(1.5)
+            return _get(endpoint, params, since=since, _retry=False)
         if e.code >= 500 and _retry:
             logger.warning(f"OpenF1 {e.code} on {endpoint}, retrying in 2s")
             time.sleep(2)
@@ -188,7 +193,7 @@ def fetch_all_session_data(session_key: str) -> dict:
     }
 
     results = {}
-    with ThreadPoolExecutor(max_workers=7) as pool:
+    with ThreadPoolExecutor(max_workers=5) as pool:  # OpenF1 limit: 6 req/s; 5 workers + retries stays safe
         futures = {
             pool.submit(_get, endpoint, params, since): key
             for key, (endpoint, params, since) in tasks.items()

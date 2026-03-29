@@ -344,8 +344,9 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
                 headers={"Content-Type": "application/json", "Api-Key": license_key},
                 method="POST",
             )
-            urllib.request.urlopen(req, timeout=8)
-            logger.info(f"NR: pushed {len(predictions)} drivers ({len(metrics)} metrics) to Metric API")
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                nr_status = resp.status
+            logger.info(f"NR: pushed {len(predictions)} drivers ({len(metrics)} metrics) → HTTP {nr_status}")
 
             # ── Log API: one entry per invocation with commentary ────────────
             if commentary:
