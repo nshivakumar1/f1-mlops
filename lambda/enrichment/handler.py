@@ -70,7 +70,12 @@ def _get_newrelic_key() -> str:
         return ""
     try:
         secret = secretsmanager.get_secret_value(SecretId=NEWRELIC_LICENSE_KEY_SECRET)
-        _newrelic_license_key = secret["SecretString"]
+        raw = secret["SecretString"]
+        # NR Lambda Extension requires JSON format {"LicenseKey": "..."}
+        try:
+            _newrelic_license_key = json.loads(raw)["LicenseKey"]
+        except (json.JSONDecodeError, KeyError):
+            _newrelic_license_key = raw  # plain string fallback
         return _newrelic_license_key
     except Exception as e:
         logger.warning(f"Failed to fetch NR license key: {e}")
@@ -251,11 +256,17 @@ def publish_metrics_async(predictions: list):
 
 def push_to_newrelic(predictions: list, session_key: str, safety_car_active: bool, commentary: str = ""):
     """Push per-driver pitstop predictions to New Relic as F1PitstopPrediction custom events.
-    Commentary (Groq/Llama) is attached to every event for display in NR dashboards.
+    Routes through the NR Lambda Extension agent (already authenticated) to avoid
+    Insights API key issues. Falls back to direct HTTP if agent is unavailable.
     """
-    license_key = _get_newrelic_key()
-    if not license_key or not NEWRELIC_ACCOUNT_ID or not predictions:
+    if not predictions:
         return
+
+    try:
+        import newrelic.agent as nr_agent
+        agent_available = True
+    except ImportError:
+        agent_available = False
 
     def _push():
         try:
@@ -279,19 +290,26 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
                     "timestamp": int(time.time() * 1000),
                 })
 
-            data = json.dumps(events).encode()
-            url = f"https://insights-collector.newrelic.com/v1/accounts/{NEWRELIC_ACCOUNT_ID}/events"
-            req = urllib.request.Request(
-                url,
-                data=data,
-                headers={
-                    "Content-Type": "application/json",
-                    "Api-Key": license_key,
-                },
-                method="POST",
-            )
-            urllib.request.urlopen(req, timeout=5)
-            logger.info(f"Pushed {len(events)} F1PitstopPrediction events to New Relic")
+            if agent_available:
+                # Use NR agent — routes through the Extension, no API key needed
+                for event in events:
+                    event_type = event.pop("eventType")
+                    nr_agent.record_custom_event(event_type, event)
+                logger.info(f"Recorded {len(events)} F1PitstopPrediction events via NR agent")
+            else:
+                # Fallback: direct HTTP to Insights API
+                license_key = _get_newrelic_key()
+                if not license_key or not NEWRELIC_ACCOUNT_ID:
+                    return
+                data = json.dumps(events).encode()
+                url = f"https://insights-collector.newrelic.com/v1/accounts/{NEWRELIC_ACCOUNT_ID}/events"
+                req = urllib.request.Request(
+                    url, data=data,
+                    headers={"Content-Type": "application/json", "Api-Key": license_key},
+                    method="POST",
+                )
+                urllib.request.urlopen(req, timeout=5)
+                logger.info(f"Pushed {len(events)} F1PitstopPrediction events to New Relic (HTTP)")
         except Exception as e:
             logger.warning(f"New Relic event push failed (non-critical): {e}")
 
