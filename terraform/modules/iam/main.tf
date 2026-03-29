@@ -107,7 +107,7 @@ resource "aws_iam_role_policy" "lambda_custom" {
       },
       {
         Effect   = "Allow"
-        Action   = ["events:DescribeRule"]
+        Action   = ["events:DescribeRule", "events:DisableRule"]
         Resource = "arn:aws:events:${var.aws_region}:${var.account_id}:rule/*"
       },
       {

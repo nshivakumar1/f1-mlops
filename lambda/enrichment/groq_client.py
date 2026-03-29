@@ -40,6 +40,53 @@ def _get_client() -> Groq:
     return _api_key_cache["client"]
 
 
+def generate_race_summary(predictions: list, session_key: str) -> str:
+    """
+    Generate a post-race summary once the chequered flag is shown.
+    Sorted by win_probability to derive the final podium order.
+    Returns summary string, or "" on failure (non-blocking).
+    """
+    if not predictions:
+        return ""
+    try:
+        client = _get_client()
+
+        # Sort by win_probability descending to get podium order
+        standings = sorted(predictions, key=lambda p: p.get("win_probability", 0), reverse=True)
+
+        podium_lines = []
+        for pos, p in enumerate(standings[:3], start=1):
+            driver = p.get("driver_name", "Unknown")
+            team = p.get("team", "")
+            features = p.get("features") or []
+            tyre = p.get("tyre_compound", "?")
+            pits = p.get("pits_completed", 0)
+            gap = features[2] if len(features) > 2 else 0
+            gap_str = "Winner" if pos == 1 else f"+{gap:.3f}s"
+            podium_lines.append(
+                f"  P{pos}: {driver} ({team}) — {gap_str}, {tyre} tyres, {pits} stop{'s' if pits != 1 else ''}"
+            )
+
+        prompt = (
+            f"You are a Sky Sports F1 commentator. The race (session {session_key}) has just finished — the chequered flag is out.\n\n"
+            f"Final podium:\n" + "\n".join(podium_lines) + "\n\n"
+            "In 2-3 sentences: (1) congratulate the race winner and name the podium, "
+            "(2) briefly describe the key strategic or on-track factor that decided the race outcome. "
+            "Be specific, celebratory, and direct — as if live on air at the chequered flag."
+        )
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=150,
+            temperature=0.7,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.warning(f"Race summary generation failed (non-critical): {e}")
+        return ""
+
+
 def generate_race_commentary(predictions: list, safety_car: bool, session_key: str) -> str:
     """
     Generate race commentary using Llama 3.3 70B via Groq.

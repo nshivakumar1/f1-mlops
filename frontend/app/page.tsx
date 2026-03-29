@@ -187,7 +187,7 @@ export default function LivePage() {
           <h1 className="text-2xl font-black"><span className="text-[#e10600]">LIVE</span> Pitstop Predictions</h1>
           {data && (
             <p className="text-gray-500 text-sm mt-1">
-              Session {data.session_key} · {data.safety_car_active && <span className="text-yellow-400 font-bold">⚠️ SAFETY CAR · </span>}
+              Session {data.session_key} · {data.race_finished && <span className="text-[#ffd700] font-bold">FINISHED · </span>}{data.safety_car_active && !data.race_finished && <span className="text-yellow-400 font-bold">⚠️ SAFETY CAR · </span>}
               {data.predictions[0] && <span className="text-[#ffd700] font-bold">P1: {data.predictions[0].driver_name} · </span>}
               Updated {lastUpdated?.toLocaleTimeString()}
             </p>

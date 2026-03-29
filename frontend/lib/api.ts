@@ -20,6 +20,7 @@ export interface SessionData {
   circuit_key?: string;
   prediction_time: string;
   safety_car_active: boolean;
+  race_finished?: boolean;
   processing_time_ms?: number;
   predictions: Prediction[];
   commentary?: string;

@@ -246,6 +246,7 @@ def handle_latest_session() -> dict:
             "circuit_key": circuit_key,
             "prediction_time": data.get("timestamp"),
             "safety_car_active": data.get("safety_car_active", False),
+            "race_finished": data.get("race_finished", False),
             "processing_time_ms": data.get("processing_time_ms"),
             "commentary": data.get("commentary", ""),
             "predictions": [

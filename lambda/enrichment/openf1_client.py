@@ -155,6 +155,16 @@ def get_race_control(session_key: str) -> list:
     return _get("race_control", {"session_key": session_key})
 
 
+def check_race_finished(race_control_messages: list) -> bool:
+    """Returns True if the chequered flag has been shown (race is over)."""
+    for msg in race_control_messages:
+        flag = (msg.get("flag") or "").upper()
+        message = (msg.get("message") or "").upper()
+        if flag == "CHEQUERED" or "CHEQUERED" in message:
+            return True
+    return False
+
+
 def get_latest_session() -> dict:
     """Returns the most recent session that has already started."""
     now = datetime.now(timezone.utc)

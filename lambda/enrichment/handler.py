@@ -23,9 +23,10 @@ from openf1_client import (
     build_feature_vector,
     fetch_all_session_data,
     get_latest_session,
+    check_race_finished,
     ALL_DRIVER_NUMBERS,
 )
-from groq_client import generate_race_commentary
+from groq_client import generate_race_commentary, generate_race_summary
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -50,11 +51,14 @@ LOGSTASH_ENDPOINT = os.environ.get("LOGSTASH_ENDPOINT", "")
 NEWRELIC_ACCOUNT_ID = os.environ.get("NEWRELIC_ACCOUNT_ID", "")
 NEWRELIC_LICENSE_KEY_SECRET = os.environ.get("NEWRELIC_LICENSE_KEY_SECRET", "")
 
+POLLER_RULE_NAME = os.environ.get("POLLER_RULE_NAME", "f1-mlops-live-poller")
+
 s3 = boto3.client("s3", region_name=AWS_REGION)
 sagemaker_runtime = boto3.client("sagemaker-runtime", region_name=AWS_REGION)
 cloudwatch = boto3.client("cloudwatch", region_name=AWS_REGION)
 sns = boto3.client("sns", region_name=AWS_REGION)
 secretsmanager = boto3.client("secretsmanager", region_name=AWS_REGION)
+events_client = boto3.client("events", region_name=AWS_REGION)
 
 ALERT_PROBABILITY_THRESHOLD = 0.85
 
@@ -86,6 +90,15 @@ def _get_newrelic_key() -> str:
     except Exception as e:
         logger.warning(f"Failed to fetch NR license key: {e}")
         return ""
+
+def _disable_poller():
+    """Auto-disable the EventBridge polling rule once the chequered flag is detected."""
+    try:
+        events_client.disable_rule(Name=POLLER_RULE_NAME)
+        logger.info(f"EventBridge rule '{POLLER_RULE_NAME}' disabled — race finished.")
+    except Exception as e:
+        logger.warning(f"Failed to auto-disable EventBridge rule: {e}")
+
 
 # Module-level fallback: last successful prediction batch (survives warm invocations)
 _last_good_predictions: dict = {}   # session_key → list of prediction dicts
@@ -399,6 +412,9 @@ def lambda_handler(event, context):
             logger.warning("OpenF1 stints empty and no S3 cache found — tyre data will be UNKNOWN")
 
     safety_car_active = check_safety_car(session_data)
+    race_finished = check_race_finished(session_data.get("race_control", []))
+    if race_finished:
+        logger.info("Chequered flag detected — race is finished.")
 
     # ── 3. Build feature vectors for all drivers ─────────────────────────────
     driver_features = []   # (driver_number, feature_data)
@@ -445,10 +461,16 @@ def lambda_handler(event, context):
     if predictions:
         predictions = compute_win_probabilities(predictions, safety_car_active)
 
-    # ── 5c. Groq race commentary (non-blocking — failure returns "") ─────────
-    commentary = generate_race_commentary(predictions, safety_car_active, session_key)
-    if commentary:
-        logger.info(f"Groq commentary: {commentary[:80]}...")
+    # ── 5c. Groq commentary — post-race summary or live strategy ────────────
+    if race_finished:
+        commentary = generate_race_summary(predictions, session_key)
+        if commentary:
+            logger.info(f"Post-race summary: {commentary[:80]}...")
+        _disable_poller()
+    else:
+        commentary = generate_race_commentary(predictions, safety_car_active, session_key)
+        if commentary:
+            logger.info(f"Groq commentary: {commentary[:80]}...")
 
     # ── 5d. Fire SNS alerts with commentary attached ─────────────────────────
     if driver_features:
@@ -474,6 +496,7 @@ def lambda_handler(event, context):
             "predictions": predictions,
             "errors": errors,
             "safety_car_active": safety_car_active,
+            "race_finished": race_finished,
             "processing_time_ms": processing_ms,
             "commentary": commentary,
         }),
