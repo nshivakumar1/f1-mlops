@@ -257,69 +257,90 @@ def publish_metrics_async(predictions: list):
 
 
 def push_to_newrelic(predictions: list, session_key: str, safety_car_active: bool, commentary: str = ""):
-    """Push per-driver pitstop predictions to New Relic as F1PitstopPrediction custom events.
+    """Push per-driver predictions to New Relic via Metric API + Log API.
 
-    record_custom_event() calls MUST run in the main handler thread before it returns —
-    the NR Extension flushes the agent buffer immediately after the handler, so events
-    recorded in background threads miss the flush window and are never sent.
+    The Insights Events API requires a separate Insights Insert Key (not the
+    License/Ingest Key). Metric API and Log API both accept the License Key.
+
+    Dashboard queries:
+      SELECT latest(value) FROM Metric WHERE metricName = 'f1.pitstop.probability'
+        FACET driverCode SINCE 30 minutes ago
+      SELECT latest(message) FROM Log WHERE sessionKey IS NOT NULL
+        SINCE 30 minutes ago
     """
     if not predictions:
         return
 
-    try:
-        import newrelic.agent as nr_agent
-        agent_available = True
-    except ImportError:
-        agent_available = False
+    license_key = _get_newrelic_key()
+    if not license_key:
+        return
 
-    events = []
-    for p in predictions:
-        pred = p.get("prediction", {})
-        events.append({
-            "sessionKey": session_key,
-            "driverNumber": p.get("driver_number"),
-            "driverCode": p.get("driver_code", ""),
-            "team": p.get("team", ""),
-            "pitstopProbability": pred.get("pitstop_probability", 0.0),
-            "confidence": pred.get("confidence", 0.0),
-            "tyreCompound": p.get("tyre_compound", "UNKNOWN"),
-            "tyreAge": p["features"][0] if p.get("features") else 0,
-            "lapNumber": p.get("lap_number", 0),
-            "safetyCarActive": safety_car_active,
-            "winProbability": p.get("win_probability", 0.0),
-            "aiCommentary": commentary[:4095] if commentary else "",
-            "timestamp": int(time.time() * 1000),
-        })
+    ts_sec = int(time.time())
 
-    if agent_available:
-        # Synchronous — must run in main thread before handler returns so the
-        # NR Extension includes these events in the current invocation's flush
+    def _push():
         try:
-            for event in events:
-                nr_agent.record_custom_event("F1PitstopPrediction", event)
-            logger.info(f"Recorded {len(events)} F1PitstopPrediction events via NR agent")
-        except Exception as e:
-            logger.warning(f"New Relic event push failed (non-critical): {e}")
-    else:
-        # Fallback: direct HTTP in background thread (doesn't block handler)
-        def _http_push():
-            try:
-                license_key = _get_newrelic_key()
-                if not license_key or not NEWRELIC_ACCOUNT_ID:
-                    return
-                payload = [dict(eventType="F1PitstopPrediction", **e) for e in events]
-                data = json.dumps(payload).encode()
-                url = f"https://insights-collector.newrelic.com/v1/accounts/{NEWRELIC_ACCOUNT_ID}/events"
-                req = urllib.request.Request(
-                    url, data=data,
+            # ── Metric API: one pitstop + one win metric per driver ──────────
+            metrics = []
+            for p in predictions:
+                pred = p.get("prediction", {})
+                attrs = {
+                    "sessionKey": session_key,
+                    "driverNumber": str(p.get("driver_number", "")),
+                    "driverCode": p.get("driver_code", ""),
+                    "team": p.get("team", ""),
+                    "tyreCompound": p.get("tyre_compound", "UNKNOWN"),
+                    "tyreAge": str(p["features"][0] if p.get("features") else 0),
+                    "lapNumber": str(p.get("lap_number", 0)),
+                    "safetyCarActive": str(safety_car_active).lower(),
+                    "confidence": str(round(pred.get("confidence", 0.0), 4)),
+                }
+                metrics.append({
+                    "name": "f1.pitstop.probability",
+                    "type": "gauge",
+                    "value": round(pred.get("pitstop_probability", 0.0), 4),
+                    "timestamp": ts_sec,
+                    "attributes": attrs,
+                })
+                metrics.append({
+                    "name": "f1.win.probability",
+                    "type": "gauge",
+                    "value": round(p.get("win_probability", 0.0), 4),
+                    "timestamp": ts_sec,
+                    "attributes": attrs,
+                })
+
+            metric_payload = json.dumps([{"metrics": metrics}]).encode()
+            req = urllib.request.Request(
+                "https://metric-api.newrelic.com/metric/v1",
+                data=metric_payload,
+                headers={"Content-Type": "application/json", "Api-Key": license_key},
+                method="POST",
+            )
+            urllib.request.urlopen(req, timeout=8)
+            logger.info(f"Pushed {len(predictions)} drivers ({len(metrics)} metrics) to New Relic Metric API")
+
+            # ── Log API: one entry per invocation with commentary ────────────
+            if commentary:
+                log_payload = json.dumps([{"logs": [{
+                    "timestamp": ts_sec * 1000,
+                    "message": commentary[:4095],
+                    "sessionKey": session_key,
+                    "safetyCarActive": safety_car_active,
+                    "driverCount": len(predictions),
+                    "source": "f1-mlops",
+                }]}]).encode()
+                req2 = urllib.request.Request(
+                    "https://log-api.newrelic.com/log/v1",
+                    data=log_payload,
                     headers={"Content-Type": "application/json", "Api-Key": license_key},
                     method="POST",
                 )
-                urllib.request.urlopen(req, timeout=5)
-                logger.info(f"Pushed {len(events)} F1PitstopPrediction events to New Relic (HTTP)")
-            except Exception as e:
-                logger.warning(f"New Relic event push failed (non-critical): {e}")
-        threading.Thread(target=_http_push, daemon=True).start()
+                urllib.request.urlopen(req2, timeout=5)
+
+        except Exception as e:
+            logger.warning(f"New Relic push failed (non-critical): {e}")
+
+    threading.Thread(target=_push, daemon=True).start()
 
 
 def push_logstash_async(payload: dict):
