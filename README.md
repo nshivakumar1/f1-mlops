@@ -31,7 +31,7 @@ Every **60 seconds** during a live race, this system:
 7. 📊 Streams **custom events + infra metrics** to **New Relic** dashboards in near real-time
 8. 🩺 Ships **errors and traces** to **Sentry** via the NR Lambda layer
 
-Built for the **2026 Formula 1 season** — first deployed at the Chinese GP (Shanghai, March 13–15).
+Built for the **2026 Formula 1 season** — live since the Australian GP (Melbourne, March 14). Survived 3 race weekends and counting.
 
 ---
 
@@ -405,8 +405,8 @@ Output:
 |:-----|:--------|:--------|:------:|
 | 🇦🇺 R1 | Melbourne | Mar 14–16 | ✅ Live |
 | 🇨🇳 R2 | Shanghai | Mar 21–23 | ✅ Live |
-| 🇯🇵 R3 | **Suzuka** | **Apr 4–6** | 🟡 Next |
-| 🇧🇭 R4 | Bahrain | Apr 11–13 | — |
+| 🇯🇵 R3 | Suzuka | Mar 28–30 | ✅ Live |
+| 🇧🇭 R4 | **Bahrain** | **Apr 11–13** | 🟡 Next |
 | 🇸🇦 R5 | Jeddah | Apr 25–27 | — |
 | 🇺🇸 R6 | Miami | May 2–4 | — |
 | ⋮ | ⋮ | ⋮ | |
