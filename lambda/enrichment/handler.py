@@ -34,7 +34,11 @@ sentry_sdk.init(
     dsn=os.environ.get("SENTRY_DSN", ""),
     integrations=[AwsLambdaIntegration()],
     environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
-    traces_sample_rate=0.1,
+    traces_sample_rate=1.0,
+    send_default_pii=True,
+    profile_session_sample_rate=1.0,
+    profile_lifecycle="trace",
+    release=os.environ.get("SENTRY_RELEASE", ""),
     enable_logs=True,
 )
 
@@ -286,11 +290,11 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
                 attrs = {
                     "sessionKey": session_key,
                     "driverNumber": str(p.get("driver_number", "")),
-                    "driverCode": p.get("driver_code", ""),
+                    "driverCode": p.get("driver_name", ""),
                     "team": p.get("team", ""),
                     "tyreCompound": p.get("tyre_compound", "UNKNOWN"),
                     "tyreAge": str(p["features"][0] if p.get("features") else 0),
-                    "lapNumber": str(p.get("lap_number", 0)),
+                    "lapNumber": str(p["features"][0] if p.get("features") else 0),
                     "safetyCarActive": str(safety_car_active).lower(),
                     "confidence": str(round(pred.get("confidence", 0.0), 4)),
                 }

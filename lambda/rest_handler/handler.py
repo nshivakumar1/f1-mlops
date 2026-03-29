@@ -13,13 +13,17 @@ import urllib.request
 import urllib.error
 import sentry_sdk
 from sentry_sdk.integrations.aws_lambda import AwsLambdaIntegration
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 sentry_sdk.init(
     dsn=os.environ.get("SENTRY_DSN", ""),
     integrations=[AwsLambdaIntegration()],
     environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
-    traces_sample_rate=0.1,
+    traces_sample_rate=1.0,
+    send_default_pii=True,
+    profile_session_sample_rate=1.0,
+    profile_lifecycle="trace",
+    release=os.environ.get("SENTRY_RELEASE", ""),
     enable_logs=True,
 )
 
@@ -231,7 +235,7 @@ def handle_live_positions() -> dict:
                 if key.isdigit():
                     session_key = key
 
-        since = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        since = (datetime.now(timezone.utc) - timedelta(minutes=3)).strftime("%Y-%m-%dT%H:%M:%S")
         url = f"https://api.openf1.org/v1/position?session_key={session_key}&date>={since}"
         req = urllib.request.Request(url, headers={"User-Agent": "f1-mlops/1.0"})
         with urllib.request.urlopen(req, timeout=8) as resp:
