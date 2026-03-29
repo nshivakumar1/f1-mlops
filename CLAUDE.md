@@ -393,7 +393,7 @@ pytest tests/unit/test_enrichment.py -v  # Single test file
 ### AI Commentary — COMPLETE (Groq, not Gemini)
 - **Secret name:** `f1-mlops/gemini-api-key` (stores Groq key `gsk_...`, not renamed to avoid Terraform changes)
 - **Model:** `llama-3.3-70b-versatile` via `groq>=0.11.0`
-- **Client file:** `lambda/enrichment/gemini_client.py`
+- **Client file:** `lambda/enrichment/groq_client.py` (renamed from `gemini_client.py` — see Known Mistake #42)
 - **Status:** DEPLOYED and working
 
 ### Frontend (Next.js → Vercel) — COMPLETE
@@ -442,11 +442,12 @@ pytest tests/unit/test_enrichment.py -v  # Single test file
    aws events disable-rule --name f1-mlops-live-poller --region us-east-1
    ```
 
-## Current State (as of 2026-03-23)
+## Current State (as of 2026-03-30)
 
-- **Enrichment Lambda:** Groq commentary (`groq_client.py`) + `win_probability` computed inline (position/gap/tyre/team scoring)
-- **Sentry:** ACTIVE — `infinityloopstudios` org, `f1-mlops` project, all 5 Lambdas reporting
-- **REST handler:** `/sessions/latest` and `/predict/positions/{session_key}` return `win_probability` per driver
+- **Enrichment Lambda:** Groq commentary (`groq_client.py`) + `win_probability` computed inline (position/gap/tyre/team scoring) + chequered flag detection + auto-disable poller on race finish
+- **Sentry:** ACTIVE — `infinityloopstudios` org, `f1-mlops` project, all 5 Lambdas reporting; 1 alert rule set (all errors, 5 min interval, email notification)
+- **REST handler:** `/sessions/latest` and `/predict/positions/{session_key}` return `win_probability` + `race_finished` per driver
+- **Frontend:** `race_finished` badge displayed; "FINISHED" shown in header when race over
 - **Pre-race check Lambda:** `f1-mlops-prerace-check` — validates 8 systems before race start
 - **Slack notifier:** AWS Chatbot → #f1-race-alerts (CloudWatch Alarms only — NR alerts go to email)
 - **Groq API key:** `f1-mlops/gemini-api-key` (plain string `gsk_...`)
@@ -456,3 +457,33 @@ pytest tests/unit/test_enrichment.py -v  # Single test file
 - **Grafana EC2 (`i-09c735935e93429d5`):** STOPPED — retired (replaced by New Relic)
 - **SageMaker endpoint:** InService (serverless, pitstop XGBoost only)
 - **Position model:** Trained (12 features incl. live position/gap/lap_fraction) but not deployed as SageMaker endpoint — win probability is computed inline instead
+- **v1.0.0:** RELEASED (post-Japan GP) — see Feature Release Roadmap below
+
+## Feature Release Roadmap
+
+> All releases are GitHub Releases (tagged). Start implementation after Bahrain GP.
+
+### v1.1 — Post-Race Accuracy Tracker
+
+- New Lambda: `post_race_accuracy` — runs 2h after `race_finished=true`
+- Fetches actual pit lap data from OpenF1, compares vs model predictions
+- Stores accuracy report to S3: `accuracy/{session_key}/report.json`
+- Sends accuracy score to Slack #f1-race-alerts
+- Tracks accuracy trend across season (baseline 88.5%)
+
+### v1.2 — SSE Real-Time Frontend
+
+- Replace 30s polling with Server-Sent Events
+- New API Gateway route: `GET /stream/live`
+- Frontend: `EventSource` replaces `setInterval`
+- Reduces perceived latency to near-real-time
+
+### v1.3 — Automated Model Retraining Pipeline
+
+- EventBridge fires 2h after `race_finished=true`
+- `post_race_collector` Lambda harvests full race data from OpenF1
+- `model_retrainer` Lambda triggers SageMaker Training Job
+- If new accuracy >= current accuracy → deploy updated endpoint
+- Slack notification: "Model retrained: 88.5% → X%"
+- Goal: no stale training data; model updates after every race
+- Accuracy ceiling ~93-95% (100% impossible — safety cars/mechanical failures unpredictable)
