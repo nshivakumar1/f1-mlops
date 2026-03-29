@@ -17,6 +17,7 @@ import urllib.error
 import boto3
 import logging
 import sentry_sdk
+from sentry_sdk.integrations.aws_lambda import AwsLambdaIntegration
 from datetime import datetime, timezone
 from openf1_client import (
     build_feature_vector,
@@ -31,6 +32,7 @@ logger.setLevel(logging.INFO)
 
 sentry_sdk.init(
     dsn=os.environ.get("SENTRY_DSN", ""),
+    integrations=[AwsLambdaIntegration()],
     environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
     traces_sample_rate=0.1,
     enable_logs=True,
@@ -256,8 +258,10 @@ def publish_metrics_async(predictions: list):
 
 def push_to_newrelic(predictions: list, session_key: str, safety_car_active: bool, commentary: str = ""):
     """Push per-driver pitstop predictions to New Relic as F1PitstopPrediction custom events.
-    Routes through the NR Lambda Extension agent (already authenticated) to avoid
-    Insights API key issues. Falls back to direct HTTP if agent is unavailable.
+
+    record_custom_event() calls MUST run in the main handler thread before it returns —
+    the NR Extension flushes the agent buffer immediately after the handler, so events
+    recorded in background threads miss the flush window and are never sent.
     """
     if not predictions:
         return
@@ -268,40 +272,43 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
     except ImportError:
         agent_available = False
 
-    def _push():
-        try:
-            events = []
-            for p in predictions:
-                pred = p.get("prediction", {})
-                events.append({
-                    "eventType": "F1PitstopPrediction",
-                    "sessionKey": session_key,
-                    "driverNumber": p.get("driver_number"),
-                    "driverCode": p.get("driver_code", ""),
-                    "team": p.get("team", ""),
-                    "pitstopProbability": pred.get("pitstop_probability", 0.0),
-                    "confidence": pred.get("confidence", 0.0),
-                    "tyreCompound": p.get("tyre_compound", "UNKNOWN"),
-                    "tyreAge": p["features"][0] if p.get("features") else 0,
-                    "lapNumber": p.get("lap_number", 0),
-                    "safetyCarActive": safety_car_active,
-                    "winProbability": p.get("win_probability", 0.0),
-                    "aiCommentary": commentary[:4095] if commentary else "",
-                    "timestamp": int(time.time() * 1000),
-                })
+    events = []
+    for p in predictions:
+        pred = p.get("prediction", {})
+        events.append({
+            "sessionKey": session_key,
+            "driverNumber": p.get("driver_number"),
+            "driverCode": p.get("driver_code", ""),
+            "team": p.get("team", ""),
+            "pitstopProbability": pred.get("pitstop_probability", 0.0),
+            "confidence": pred.get("confidence", 0.0),
+            "tyreCompound": p.get("tyre_compound", "UNKNOWN"),
+            "tyreAge": p["features"][0] if p.get("features") else 0,
+            "lapNumber": p.get("lap_number", 0),
+            "safetyCarActive": safety_car_active,
+            "winProbability": p.get("win_probability", 0.0),
+            "aiCommentary": commentary[:4095] if commentary else "",
+            "timestamp": int(time.time() * 1000),
+        })
 
-            if agent_available:
-                # Use NR agent — routes through the Extension, no API key needed
-                for event in events:
-                    event_type = event.pop("eventType")
-                    nr_agent.record_custom_event(event_type, event)
-                logger.info(f"Recorded {len(events)} F1PitstopPrediction events via NR agent")
-            else:
-                # Fallback: direct HTTP to Insights API
+    if agent_available:
+        # Synchronous — must run in main thread before handler returns so the
+        # NR Extension includes these events in the current invocation's flush
+        try:
+            for event in events:
+                nr_agent.record_custom_event("F1PitstopPrediction", event)
+            logger.info(f"Recorded {len(events)} F1PitstopPrediction events via NR agent")
+        except Exception as e:
+            logger.warning(f"New Relic event push failed (non-critical): {e}")
+    else:
+        # Fallback: direct HTTP in background thread (doesn't block handler)
+        def _http_push():
+            try:
                 license_key = _get_newrelic_key()
                 if not license_key or not NEWRELIC_ACCOUNT_ID:
                     return
-                data = json.dumps(events).encode()
+                payload = [dict(eventType="F1PitstopPrediction", **e) for e in events]
+                data = json.dumps(payload).encode()
                 url = f"https://insights-collector.newrelic.com/v1/accounts/{NEWRELIC_ACCOUNT_ID}/events"
                 req = urllib.request.Request(
                     url, data=data,
@@ -310,10 +317,9 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
                 )
                 urllib.request.urlopen(req, timeout=5)
                 logger.info(f"Pushed {len(events)} F1PitstopPrediction events to New Relic (HTTP)")
-        except Exception as e:
-            logger.warning(f"New Relic event push failed (non-critical): {e}")
-
-    threading.Thread(target=_push, daemon=True).start()
+            except Exception as e:
+                logger.warning(f"New Relic event push failed (non-critical): {e}")
+        threading.Thread(target=_http_push, daemon=True).start()
 
 
 def push_logstash_async(payload: dict):

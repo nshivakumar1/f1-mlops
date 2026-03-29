@@ -8,9 +8,11 @@ import os
 import boto3
 import logging
 import sentry_sdk
+from sentry_sdk.integrations.aws_lambda import AwsLambdaIntegration
 
 sentry_sdk.init(
     dsn=os.environ.get("SENTRY_DSN", ""),
+    integrations=[AwsLambdaIntegration()],
     environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
     traces_sample_rate=0.1,
     enable_logs=True,
