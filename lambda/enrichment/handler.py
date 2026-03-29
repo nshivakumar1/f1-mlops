@@ -375,15 +375,18 @@ def lambda_handler(event, context):
             country_name = session.get("country_name", "")
         except Exception as e:
             logger.error(f"Failed to get session: {e}")
+            sentry_sdk.capture_exception(e)
             session_key = "latest"
 
     logger.info(f"Processing session_key={session_key}")
+    sentry_sdk.set_tag("session_key", session_key)
 
     # ── 2. Fetch all session data (5 concurrent API calls) ───────────────────
     try:
         session_data = fetch_all_session_data(session_key)
     except Exception as e:
         logger.error(f"Failed to fetch session data: {e}")
+        sentry_sdk.capture_exception(e)
         # Serve stale predictions if available — don't return empty hands
         stale = _last_good_predictions.get(session_key, [])
         if stale:
@@ -447,6 +450,7 @@ def lambda_handler(event, context):
 
         except Exception as e:
             logger.error(f"SageMaker batch inference failed: {e}")
+            sentry_sdk.capture_exception(e)
             stale = _last_good_predictions.get(session_key, [])
             if stale:
                 logger.warning(f"SageMaker down — serving {len(stale)} stale predictions")

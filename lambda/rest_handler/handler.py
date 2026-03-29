@@ -170,6 +170,7 @@ def handle_positions_get(session_key: str) -> dict:
         })
     except Exception as e:
         logger.error(f"Error fetching positions: {e}")
+        sentry_sdk.capture_exception(e)
         return _response(500, {"error": "Internal server error"})
 
 
@@ -186,6 +187,7 @@ def handle_sessions_list() -> dict:
         return _response(200, {"sessions": sorted(sessions, reverse=True)})
     except Exception as e:
         logger.error(f"Error listing sessions: {e}")
+        sentry_sdk.capture_exception(e)
         return _response(500, {"error": "Internal server error"})
 
 
@@ -260,6 +262,7 @@ def handle_latest_session() -> dict:
         })
     except Exception as e:
         logger.error(f"Error fetching latest session: {e}")
+        sentry_sdk.capture_exception(e)
         return _response(500, {"error": "Internal server error"})
 
 
@@ -330,6 +333,7 @@ def handle_track_layout(circuit_key: str) -> dict:
         return _response(404, {"error": f"No track layout found for circuit {key}"})
     except Exception as e:
         logger.error(f"Error fetching track layout: {e}")
+        sentry_sdk.capture_exception(e)
         return _response(500, {"error": "Internal server error"})
 
 
