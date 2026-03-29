@@ -252,7 +252,7 @@ def handle_latest_session() -> dict:
                 _format_prediction(p)
                 for p in sorted(
                     data.get("predictions", []),
-                    key=lambda x: x["prediction"].get("pitstop_probability", 0),
+                    key=lambda x: x.get("win_probability", 0),
                     reverse=True,
                 )
             ],

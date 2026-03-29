@@ -30,20 +30,40 @@ function TyreBadge({ compound, age }: { compound: string; age: number }) {
 function DriverCard({ p, rank }: { p: SessionData["predictions"][0]; rank: number }) {
   const teamColor = getTeamColor(p.team);
   const pct = Math.round(p.pitstop_probability * 100);
+  const winPct = Math.round((p.win_probability ?? 0) * 100);
   const isHot = pct >= 70;
+  const isLeader = rank === 1;
+  const gap = p.gap_to_leader;
   return (
-    <div className={`bg-[#1a1a1a] rounded-xl p-4 border transition-all ${isHot ? "border-[#e10600] shadow-[0_0_12px_rgba(225,6,0,0.2)]" : "border-[#2a2a2a]"}`}>
+    <div className={`bg-[#1a1a1a] rounded-xl p-4 border transition-all ${isLeader ? "border-[#ffd700] shadow-[0_0_14px_rgba(255,215,0,0.15)]" : isHot ? "border-[#e10600] shadow-[0_0_12px_rgba(225,6,0,0.2)]" : "border-[#2a2a2a]"}`}>
       <div className="flex items-center gap-3 mb-3">
-        <span className="text-gray-500 text-sm w-4">{rank}</span>
+        <span className={`text-sm font-bold w-5 ${isLeader ? "text-[#ffd700]" : "text-gray-500"}`}>P{rank}</span>
         <div className="w-1 h-8 rounded-full" style={{ backgroundColor: teamColor }} />
         <div className="flex-1">
-          <div className="font-bold text-sm">{p.driver_name}</div>
-          <div className="text-xs text-gray-500">{p.team}</div>
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-sm">{p.driver_name}</span>
+            {isLeader && <span className="text-[10px] font-black text-[#ffd700] bg-[#ffd70020] px-1.5 py-0.5 rounded uppercase tracking-widest">Leader</span>}
+          </div>
+          <div className="text-xs text-gray-500">{p.team}{gap > 0 ? <span className="ml-2 text-gray-600">+{gap.toFixed(3)}s</span> : null}</div>
         </div>
         <TyreBadge compound={p.tyre_compound} age={p.tyre_age} />
         {isHot && <span className="text-xs text-[#e10600] font-bold animate-pulse">PIT SOON</span>}
       </div>
-      <ProbabilityBar value={p.pitstop_probability} />
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-gray-600 w-14 uppercase tracking-wide">Pit</span>
+          <ProbabilityBar value={p.pitstop_probability} />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-gray-600 w-14 uppercase tracking-wide">Win</span>
+          <div className="flex items-center gap-3 flex-1">
+            <div className="flex-1 bg-[#2a2a2a] rounded-full h-2 overflow-hidden">
+              <div className="h-2 rounded-full" style={{ width: `${winPct}%`, backgroundColor: "#ffd700" }} />
+            </div>
+            <span className="text-sm font-bold w-10 text-right text-[#ffd700]">{winPct}%</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -167,7 +187,8 @@ export default function LivePage() {
           <h1 className="text-2xl font-black"><span className="text-[#e10600]">LIVE</span> Pitstop Predictions</h1>
           {data && (
             <p className="text-gray-500 text-sm mt-1">
-              Session {data.session_key} · {data.safety_car_active && <span className="text-yellow-400 font-bold">🟡 SAFETY CAR · </span>}
+              Session {data.session_key} · {data.safety_car_active && <span className="text-yellow-400 font-bold">⚠️ SAFETY CAR · </span>}
+              {data.predictions[0] && <span className="text-[#ffd700] font-bold">P1: {data.predictions[0].driver_name} · </span>}
               Updated {lastUpdated?.toLocaleTimeString()}
             </p>
           )}

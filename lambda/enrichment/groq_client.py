@@ -42,8 +42,8 @@ def _get_client() -> Groq:
 
 def generate_race_commentary(predictions: list, safety_car: bool, session_key: str) -> str:
     """
-    Generate a 2-sentence race strategy commentary using Llama 3.3 70B via Groq.
-    Uses top-3 highest-probability predictions as context.
+    Generate race commentary using Llama 3.3 70B via Groq.
+    Covers race standings (who is winning), pit strategy, and tactical consequences.
     Returns commentary string, or "" on failure (non-blocking).
     """
     if not predictions:
@@ -51,59 +51,73 @@ def generate_race_commentary(predictions: list, safety_car: bool, session_key: s
     try:
         client = _get_client()
 
-        top = sorted(
+        all_laps = [p.get("lap_number", 0) for p in predictions if p.get("lap_number")]
+        current_lap = max(all_laps) if all_laps else 0
+
+        # Build race standings: sort by gap_to_leader ascending (0 = leader)
+        def gap_val(p):
+            features = p.get("features") or []
+            g = features[2] if len(features) > 2 else None
+            if g is None or g == 0:
+                return -1  # leader sorts first
+            try:
+                return float(g)
+            except (TypeError, ValueError):
+                return 999
+
+        standings = sorted(predictions, key=gap_val)
+
+        standings_lines = []
+        for pos, p in enumerate(standings[:5], start=1):
+            driver = p.get("driver_name", "Unknown")
+            team = p.get("team", "")
+            features = p.get("features") or []
+            gap = features[2] if len(features) > 2 else 0
+            win_pct = round(p.get("win_probability", 0) * 100, 1)
+            tyre = p.get("tyre_compound", "?")
+            age = features[0] if features else "?"
+            pits = p.get("pits_completed", 0)
+            gap_str = "LEADER" if pos == 1 else f"+{gap:.3f}s"
+            standings_lines.append(
+                f"  P{pos}: {driver} ({team}) — {gap_str}, {win_pct}% win prob, "
+                f"{tyre} tyres {age} laps old, {pits} stop{'s' if pits != 1 else ''}"
+            )
+
+        # Top pit candidates
+        pit_candidates = sorted(
             predictions,
             key=lambda p: p.get("prediction", {}).get("pitstop_probability", 0),
             reverse=True,
         )[:3]
 
-        driver_lines = []
-        for rank, p in enumerate(top, start=1):
-            driver = p.get("driver_name", p.get("driver", "Unknown"))
-            team = p.get("team", "")
+        pit_lines = []
+        for p in pit_candidates:
+            driver = p.get("driver_name", "Unknown")
             prob = p.get("prediction", {}).get("pitstop_probability", 0) * 100
-            tyre = p.get("tyre_compound", "?")
             features = p.get("features") or []
+            tyre = p.get("tyre_compound", "?")
             age = features[0] if features else "?"
-            lap = p.get("lap_number", "?")
-            pits = p.get("pits_completed", 0)
-            last_stop = p.get("last_pit_duration")
             gap = features[2] if len(features) > 2 else 0
-            drs = p.get("drs_active", False)
-            speed = p.get("speed", 0)
-
-            line = (
-                f"  {driver} ({team}): {prob:.0f}% pit probability, "
-                f"lap {lap}, {tyre} tyres {age} laps old, "
-                f"{pits} stop{'s' if pits != 1 else ''} taken"
+            gap_str = f"+{gap:.3f}s to leader" if gap else "leads"
+            pit_lines.append(
+                f"  {driver}: {prob:.0f}% pit probability, {tyre} L{age}, {gap_str}"
             )
-            if last_stop:
-                line += f", last stop {last_stop:.1f}s"
-            if gap > 0:
-                line += f", +{gap:.1f}s to leader"
-            if speed:
-                line += f", {speed}km/h {'DRS open' if drs else ''}"
-            driver_lines.append(line)
 
-        # Include race-wide context
-        all_laps = [p.get("lap_number", 0) for p in predictions if p.get("lap_number")]
-        current_lap = max(all_laps) if all_laps else 0
-        sc_note = " SAFETY CAR IS DEPLOYED — pit window is now open for everyone." if safety_car else ""
-        context_lines = [f"Race lap: {current_lap}.{sc_note}"]
-
+        sc_note = " SAFETY CAR DEPLOYED — undercut opportunity for everyone." if safety_car else ""
         prompt = (
-            f"You are an F1 race strategist providing live TV commentary. Session {session_key}.\n"
-            + "\n".join(context_lines) + "\n"
-            f"Top pitstop candidates right now:\n" + "\n".join(driver_lines) + "\n\n"
-            "In exactly 2 sentences, give sharp tactical insight: who is most likely to pit immediately and why, "
-            "and the strategic consequence for the race. Reference lap count, tyre age, and gaps. "
-            "Be specific and direct, as if speaking live on Sky Sports F1."
+            f"You are a Sky Sports F1 commentator. Session {session_key}, lap {current_lap}.{sc_note}\n\n"
+            f"Current race standings (top 5):\n" + "\n".join(standings_lines) + "\n\n"
+            f"Imminent pit stop candidates:\n" + "\n".join(pit_lines) + "\n\n"
+            "In 3 sentences: (1) name the race leader and whether their lead is secure, "
+            "(2) identify who is about to pit and the strategic reason, "
+            "(3) explain how that pit stop could change the race outcome. "
+            "Be specific, dramatic, and direct — as if live on air."
         )
 
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=150,
+            max_tokens=200,
             temperature=0.7,
         )
         return response.choices[0].message.content.strip()

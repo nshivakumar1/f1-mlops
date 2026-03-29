@@ -7,7 +7,11 @@ export interface Prediction {
   tyre_compound: string;
   tyre_age: number;
   pitstop_probability: number;
+  win_probability: number;
+  gap_to_leader: number;
   confidence: number;
+  lap_number?: number;
+  pits_completed?: number;
 }
 
 export interface SessionData {
