@@ -23,6 +23,8 @@ MOCK_SESSION_DATA = {
         ],
     },
     "weather": {"air_temperature": 28.5, "track_temperature": 44.2, "rainfall": False},
+    "pit": {},
+    "car_data": {},
 }
 
 
@@ -80,6 +82,8 @@ def test_rainfall_flag():
         "stints": {44: [{"lap_start": 1, "lap_end": 5, "stint_number": 1, "compound": "INTERMEDIATE"}]},
         "intervals": {44: [{"gap_to_leader": None}]},
         "laps": {44: []},
+        "pit": {},
+        "car_data": {},
     }
     result = build_feature_vector(44, wet_data)
     assert result["features"][5] == 1  # rainfall flag

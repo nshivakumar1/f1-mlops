@@ -261,16 +261,12 @@ def publish_metrics_async(predictions: list):
 
 
 def push_to_newrelic(predictions: list, session_key: str, safety_car_active: bool, commentary: str = ""):
-    """Push per-driver predictions to New Relic via Metric API + Log API.
+    """Push per-driver predictions to New Relic Event API as F1PitstopPrediction custom events.
 
-    The Insights Events API requires a separate Insights Insert Key (not the
-    License/Ingest Key). Metric API and Log API both accept the License Key.
-
-    Dashboard queries:
-      SELECT latest(value) FROM Metric WHERE metricName = 'f1.pitstop.probability'
-        FACET driverCode SINCE 30 minutes ago
-      SELECT latest(message) FROM Log WHERE sessionKey IS NOT NULL
-        SINCE 30 minutes ago
+    Uses the Insights Event API (accepts Ingest License Key).
+    One event per driver per invocation — queryable as:
+      SELECT * FROM F1PitstopPrediction SINCE 30 minutes ago
+      SELECT latest(pitstopProbability) FROM F1PitstopPrediction FACET driverName SINCE 1 hour ago
     """
     if not predictions:
         return
@@ -279,92 +275,47 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
     if not license_key:
         return
 
-    ts_ms = int(time.time() * 1000)   # NR Metric API requires milliseconds
+    nr_account_id = os.environ.get("NR_ACCOUNT_ID", "7841720")
 
     def _push():
         try:
-            # ── Metric API: pitstop + win + telemetry metrics per driver ─────
-            metrics = []
+            events = []
             for p in predictions:
                 pred = p.get("prediction", {})
-                attrs = {
+                events.append({
+                    "eventType": "F1PitstopPrediction",
                     "sessionKey": session_key,
-                    "driverNumber": str(p.get("driver_number", "")),
-                    "driverCode": p.get("driver_name", ""),
+                    "driverNumber": p.get("driver_number", 0),
+                    "driverName": p.get("driver_name", ""),
                     "team": p.get("team", ""),
                     "tyreCompound": p.get("tyre_compound", "UNKNOWN"),
-                    "tyreAge": str(p["features"][0] if p.get("features") else 0),
-                    "lapNumber": str(p.get("lap_number", 0)),
-                    "pitsCompleted": str(p.get("pits_completed", 0)),
-                    "lastPitDuration": str(p.get("last_pit_duration") or ""),
-                    "lastPitLap": str(p.get("last_pit_lap") or ""),
-                    "drsActive": str(p.get("drs_active", False)).lower(),
-                    "speed": str(p.get("speed", 0)),
-                    "throttle": str(p.get("throttle", 0)),
-                    "brake": str(p.get("brake", 0)),
-                    "gear": str(p.get("gear", 0)),
-                    "safetyCarActive": str(safety_car_active).lower(),
-                    "confidence": str(round(pred.get("confidence", 0.0), 4)),
-                }
-                metrics.append({
-                    "name": "f1.pitstop.probability",
-                    "type": "gauge",
-                    "value": round(pred.get("pitstop_probability", 0.0), 4),
-                    "timestamp": ts_ms,
-                    "attributes": attrs,
+                    "tyreAge": p["features"][0] if p.get("features") else 0,
+                    "lapNumber": p.get("lap_number", 0),
+                    "pitsCompleted": p.get("pits_completed", 0),
+                    "lastPitDuration": p.get("last_pit_duration") or 0.0,
+                    "lastPitLap": p.get("last_pit_lap") or 0,
+                    "drsActive": p.get("drs_active", False),
+                    "speed": p.get("speed", 0),
+                    "throttle": p.get("throttle", 0),
+                    "brake": p.get("brake", 0),
+                    "gear": p.get("gear", 0),
+                    "pitstopProbability": round(pred.get("pitstop_probability", 0.0), 4),
+                    "confidence": round(pred.get("confidence", 0.0), 4),
+                    "winProbability": round(p.get("win_probability", 0.0), 4),
+                    "safetyCarActive": safety_car_active,
+                    "aiCommentary": commentary[:4095] if commentary else "",
                 })
-                metrics.append({
-                    "name": "f1.win.probability",
-                    "type": "gauge",
-                    "value": round(p.get("win_probability", 0.0), 4),
-                    "timestamp": ts_ms,
-                    "attributes": attrs,
-                })
-                if p.get("speed"):
-                    metrics.append({
-                        "name": "f1.car.speed",
-                        "type": "gauge",
-                        "value": float(p.get("speed", 0)),
-                        "timestamp": ts_ms,
-                        "attributes": attrs,
-                    })
-                if p.get("throttle") is not None:
-                    metrics.append({
-                        "name": "f1.car.throttle",
-                        "type": "gauge",
-                        "value": float(p.get("throttle", 0)),
-                        "timestamp": ts_ms,
-                        "attributes": attrs,
-                    })
 
-            metric_payload = json.dumps([{"metrics": metrics}]).encode()
+            payload = json.dumps(events).encode()
             req = urllib.request.Request(
-                "https://metric-api.newrelic.com/metric/v1",
-                data=metric_payload,
+                f"https://insights-collector.newrelic.com/v1/accounts/{nr_account_id}/events",
+                data=payload,
                 headers={"Content-Type": "application/json", "Api-Key": license_key},
                 method="POST",
             )
             with urllib.request.urlopen(req, timeout=8) as resp:
                 nr_status = resp.status
-            logger.info(f"NR: pushed {len(predictions)} drivers ({len(metrics)} metrics) → HTTP {nr_status}")
-
-            # ── Log API: one entry per invocation with commentary ────────────
-            if commentary:
-                log_payload = json.dumps([{"logs": [{
-                    "timestamp": ts_ms,
-                    "message": commentary[:4095],
-                    "sessionKey": session_key,
-                    "safetyCarActive": safety_car_active,
-                    "driverCount": len(predictions),
-                    "source": "f1-mlops",
-                }]}]).encode()
-                req2 = urllib.request.Request(
-                    "https://log-api.newrelic.com/log/v1",
-                    data=log_payload,
-                    headers={"Content-Type": "application/json", "Api-Key": license_key},
-                    method="POST",
-                )
-                urllib.request.urlopen(req2, timeout=5)
+            logger.info(f"NR: pushed {len(events)} F1PitstopPrediction events → HTTP {nr_status}")
 
         except Exception as e:
             logger.warning(f"New Relic push failed (non-critical): {e}")

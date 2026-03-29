@@ -275,7 +275,7 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 ### 39. Grafana RETIRED — Do Not Recreate, Use New Relic
 
 - Grafana EC2 (`i-09c735935e93429d5`) is STOPPED and retired as of 2026-03-19
-- **All observability is now in New Relic** (account ID `7941720`)
+- **All observability is now in New Relic** (account ID `7841720`)
 - Live race data: `F1PitstopPrediction` custom events with `pitstopProbability`, `winProbability`, `aiCommentary`
 - Infra metrics: CloudWatch Metric Streams → Kinesis Firehose → NR (Lambda, SageMaker, Billing)
 - Do NOT recreate Grafana datasources, dashboards, or EC2 unless explicitly re-evaluating the observability stack
@@ -346,7 +346,7 @@ GitHub → GitHub Actions → [Test → Plan → Approve → Deploy]
 
 ### New Relic Setup
 
-- **NR Account ID:** `7941720`
+- **NR Account ID:** `7841720`
 - **License key secret:** `f1-mlops/newrelic-license-key`
 - **NR AWS integration role:** `arn:aws:iam::297997106614:role/f1-mlops-newrelic-integration` (register in NR UI → Infrastructure → AWS)
 - **Custom events query:** `SELECT * FROM F1PitstopPrediction SINCE 1 hour ago`
@@ -446,7 +446,7 @@ pytest tests/unit/test_enrichment.py -v  # Single test file
 - **Pre-race check Lambda:** `f1-mlops-prerace-check` — validates 8 systems before race start
 - **Slack notifier:** AWS Chatbot → #f1-race-alerts (CloudWatch Alarms only — NR alerts go to email)
 - **Groq API key:** `f1-mlops/gemini-api-key` (plain string `gsk_...`)
-- **New Relic:** License key in `f1-mlops/newrelic-license-key`; account ID `7941720`; Lambda layer on all 5 functions
+- **New Relic:** License key in `f1-mlops/newrelic-license-key`; account ID `7841720`; Lambda layer on all 5 functions
 - **Frontend:** Deployed on Vercel, Root Directory = `frontend`; displays pitstop + win probability
 - **ELK EC2 (`i-09b80fc03109c35a1`):** STOPPED — retired
 - **Grafana EC2 (`i-09c735935e93429d5`):** STOPPED — retired (replaced by New Relic)
