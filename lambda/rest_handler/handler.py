@@ -83,9 +83,16 @@ def _format_prediction(p: dict) -> dict:
         "team": p["team"],
         "tyre_compound": p.get("tyre_compound"),
         "tyre_age": p["features"][0],
+        "lap_number": p.get("lap_number", 0),
         "pitstop_probability": p["prediction"].get("pitstop_probability", 0),
         "confidence": p["prediction"].get("confidence", 0),
         "win_probability": p.get("win_probability", 0.0),
+        "pits_completed": p.get("pits_completed", 0),
+        "last_pit_duration": p.get("last_pit_duration"),
+        "last_pit_lap": p.get("last_pit_lap"),
+        "drs_active": p.get("drs_active", False),
+        "speed": p.get("speed", 0),
+        "gap_to_leader": p["features"][2] if p.get("features") and len(p["features"]) > 2 else 0,
     }
 
 
@@ -183,20 +190,56 @@ def handle_sessions_list() -> dict:
 
 
 def handle_latest_session() -> dict:
-    """GET /sessions/latest — returns most recent session predictions."""
+    """GET /sessions/latest — returns most recent session predictions.
+
+    Uses two-phase S3 lookup to avoid the 1000-object pagination limit:
+      1. List session directories with Delimiter='/' → picks highest session key
+      2. List files within that directory → picks most recently modified file
+    Without this, list_objects_v2 returns files alphabetically and stops at 1000,
+    meaning a new session with a higher key is never seen behind old session files.
+    """
     try:
-        result = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix="logs/inference/")
-        objects = result.get("Contents", [])
-        if not objects:
+        # Phase 1: list all numeric session directories
+        dir_result = s3.list_objects_v2(
+            Bucket=S3_BUCKET, Prefix="logs/inference/", Delimiter="/"
+        )
+        prefixes = [
+            p["Prefix"] for p in dir_result.get("CommonPrefixes", [])
+            if p["Prefix"].rstrip("/").split("_")[-1].isdigit()
+        ]
+        if not prefixes:
             return _response(404, {"error": "No predictions found yet"})
-        latest = sorted(objects, key=lambda x: x["LastModified"], reverse=True)[0]
-        parts = latest["Key"].split("/")
-        session_part = next((p for p in parts if p.startswith("session_")), None)
-        session_key = session_part.replace("session_", "") if session_part else "unknown"
+
+        # Phase 2: for each session directory, find its most-recently-modified file.
+        # File names use YYYYMMDD_HHMMSS so lexicographic sort == chronological.
+        # Pick the session whose latest file has the largest LastModified timestamp.
+        # (Session key numbers are NOT monotonically chronological across F1/F2/other events.)
+        best_key = None
+        best_modified = None
+        best_prefix = None
+
+        for prefix in prefixes:
+            result = s3.list_objects_v2(Bucket=S3_BUCKET, Prefix=prefix)
+            contents = result.get("Contents", [])
+            if not contents:
+                continue
+            # Filenames are YYYYMMDD_HHMMSS.json — sort by key == sort by time
+            newest = sorted(contents, key=lambda x: x["Key"])[-1]
+            if best_modified is None or newest["LastModified"] > best_modified:
+                best_modified = newest["LastModified"]
+                best_key = newest["Key"]
+                best_prefix = prefix
+
+        if not best_key:
+            return _response(404, {"error": "No predictions found yet"})
+
+        session_key = best_prefix.rstrip("/").split("_")[-1]
+        latest = {"Key": best_key}
         obj = s3.get_object(Bucket=S3_BUCKET, Key=latest["Key"])
         data = json.loads(obj["Body"].read().decode())
         country_name = data.get("country_name", "")
         circuit_key = COUNTRY_TO_CIRCUIT_KEY.get(country_name, "")
+
         return _response(200, {
             "session_key": session_key,
             "country_name": country_name,

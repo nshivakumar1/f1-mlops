@@ -1,5 +1,5 @@
 """
-AI commentary client — uses Groq (Llama 3.3 70B) for live race strategy insights.
+AI commentary client — uses Groq (Llama 3.1 8B Instant) for live race strategy insights.
 Free tier: 14,400 req/day, no credit card required (console.groq.com).
 API key stored in Secrets Manager: f1-mlops/gemini-api-key (name kept for backward compat).
 Secret name configurable via GROQ_SECRET_NAME env var.
@@ -65,17 +65,39 @@ def generate_race_commentary(predictions: list, safety_car: bool, session_key: s
             tyre = p.get("tyre_compound", "?")
             features = p.get("features") or []
             age = features[0] if features else "?"
-            driver_lines.append(
-                f"  P{rank} {driver} ({team}): {prob:.0f}% pitstop probability, "
-                f"{tyre} tyres aged {age} laps"
-            )
+            lap = p.get("lap_number", "?")
+            pits = p.get("pits_completed", 0)
+            last_stop = p.get("last_pit_duration")
+            gap = features[2] if len(features) > 2 else 0
+            drs = p.get("drs_active", False)
+            speed = p.get("speed", 0)
 
-        sc_note = " Safety car is currently deployed." if safety_car else ""
+            line = (
+                f"  {driver} ({team}): {prob:.0f}% pit probability, "
+                f"lap {lap}, {tyre} tyres {age} laps old, "
+                f"{pits} stop{'s' if pits != 1 else ''} taken"
+            )
+            if last_stop:
+                line += f", last stop {last_stop:.1f}s"
+            if gap > 0:
+                line += f", +{gap:.1f}s to leader"
+            if speed:
+                line += f", {speed}km/h {'DRS open' if drs else ''}"
+            driver_lines.append(line)
+
+        # Include race-wide context
+        all_laps = [p.get("lap_number", 0) for p in predictions if p.get("lap_number")]
+        current_lap = max(all_laps) if all_laps else 0
+        sc_note = " SAFETY CAR IS DEPLOYED — pit window is now open for everyone." if safety_car else ""
+        context_lines = [f"Race lap: {current_lap}.{sc_note}"]
+
         prompt = (
-            f"You are an F1 race strategist providing live commentary during session {session_key}.{sc_note}\n"
-            f"Current pitstop predictions:\n" + "\n".join(driver_lines) + "\n\n"
-            "In exactly 2 sentences, give sharp tactical commentary: who is most likely to pit and why, "
-            "and what the strategic implication is for the race. Be specific and direct, as if speaking live on TV."
+            f"You are an F1 race strategist providing live TV commentary. Session {session_key}.\n"
+            + "\n".join(context_lines) + "\n"
+            f"Top pitstop candidates right now:\n" + "\n".join(driver_lines) + "\n\n"
+            "In exactly 2 sentences, give sharp tactical insight: who is most likely to pit immediately and why, "
+            "and the strategic consequence for the race. Reference lap count, tyre age, and gaps. "
+            "Be specific and direct, as if speaking live on Sky Sports F1."
         )
 
         response = client.chat.completions.create(

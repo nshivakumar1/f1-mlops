@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.error
 import boto3
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -88,15 +89,18 @@ DRIVER_GRID = {
 ALL_DRIVER_NUMBERS = list(DRIVER_GRID.keys())
 
 
-def _get(endpoint: str, params: dict, _retry: bool = True) -> list:
+def _get(endpoint: str, params: dict, since: str = None, _retry: bool = True) -> list:
     """
     Authenticated GET → OpenF1 API. Returns parsed JSON list.
+    - since: optional ISO timestamp appended as &date>={since} (avoids URL-encoding the > char)
     - 401: force-refreshes token and retries once
     - 404: returns [] (OpenF1 returns 404 for empty result sets)
     - 5xx: retries once after 2s backoff
     """
     qs = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
     url = f"{BASE_URL}/{endpoint}?{qs}"
+    if since:
+        url += f"&date>={since}"
     token = _get_auth_token()
     req = urllib.request.Request(url, headers={
         "Accept": "application/json",
@@ -108,15 +112,13 @@ def _get(endpoint: str, params: dict, _retry: bool = True) -> list:
     except urllib.error.HTTPError as e:
         if e.code == 401 and _retry:
             _get_auth_token(force_refresh=True)
-            return _get(endpoint, params, _retry=False)
+            return _get(endpoint, params, since=since, _retry=False)
         if e.code == 404:
-            # OpenF1 returns 404 for empty result sets — not a real error
             return []
         if e.code >= 500 and _retry:
-            # Transient server error — wait and retry once
             logger.warning(f"OpenF1 {e.code} on {endpoint}, retrying in 2s")
             time.sleep(2)
-            return _get(endpoint, params, _retry=False)
+            return _get(endpoint, params, since=since, _retry=False)
         body = e.read().decode(errors="replace")[:300]
         logger.error(f"HTTPError {e.code} GET {url} — body: {body}")
         raise
@@ -124,7 +126,7 @@ def _get(endpoint: str, params: dict, _retry: bool = True) -> list:
         if _retry:
             logger.warning(f"OpenF1 request error on {endpoint}: {e}, retrying in 2s")
             time.sleep(2)
-            return _get(endpoint, params, _retry=False)
+            return _get(endpoint, params, since=since, _retry=False)
         raise
 
 
@@ -150,7 +152,6 @@ def get_race_control(session_key: str) -> list:
 
 def get_latest_session() -> dict:
     """Returns the most recent session that has already started."""
-    from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
     sessions = _get("sessions", {"year": now.year})
     now_iso = now.strftime("%Y-%m-%dT%H:%M")
@@ -160,27 +161,37 @@ def get_latest_session() -> dict:
 
 def fetch_all_session_data(session_key: str) -> dict:
     """
-    Parallel-fetch stints, intervals, laps, weather, and race_control
-    for ALL drivers in a single round-trip (5 concurrent calls).
+    Parallel-fetch all live telemetry endpoints for a session (7 concurrent calls).
 
-    Previously sequential (3 calls × ~700ms = ~2.1s).
-    Now concurrent: all 5 calls complete in ~max(individual latencies) ≈ 700ms.
+    Endpoints used:
+      stints       — tyre compound, lap_start, lap_end, stint_number
+      intervals    — gap_to_leader, interval to car ahead
+      laps         — per-lap sector times, lap durations
+      weather      — air/track temp, rainfall, wind speed/direction, humidity, pressure
+      race_control — safety car, VSC, flags, DRS zones, sector yellow flags
+      pit          — pit stop records: lap_number, pit_duration, pit_out_lap
+      car_data     — live telemetry (speed, throttle, brake, DRS, gear, RPM) — last 45s only
 
     Returns dicts keyed by driver_number for O(1) per-driver lookup.
+    car_data returns only the single most-recent record per driver (high-frequency feed).
     """
+    recent_45s = (datetime.now(timezone.utc) - timedelta(seconds=45)).strftime("%Y-%m-%dT%H:%M:%S")
+
     tasks = {
-        "stints":        ("stints",        {"session_key": session_key}),
-        "intervals":     ("intervals",     {"session_key": session_key}),
-        "laps":          ("laps",          {"session_key": session_key}),
-        "weather":       ("weather",       {"session_key": session_key}),
-        "race_control":  ("race_control",  {"session_key": session_key}),
+        "stints":       ("stints",       {"session_key": session_key}, None),
+        "intervals":    ("intervals",    {"session_key": session_key}, None),
+        "laps":         ("laps",         {"session_key": session_key}, None),
+        "weather":      ("weather",      {"session_key": session_key}, None),
+        "race_control": ("race_control", {"session_key": session_key}, None),
+        "pit":          ("pit",          {"session_key": session_key}, None),
+        "car_data":     ("car_data",     {"session_key": session_key}, recent_45s),
     }
 
     results = {}
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=7) as pool:
         futures = {
-            pool.submit(_get, endpoint, params): key
-            for key, (endpoint, params) in tasks.items()
+            pool.submit(_get, endpoint, params, since): key
+            for key, (endpoint, params, since) in tasks.items()
         }
         for future in as_completed(futures):
             key = futures[future]
@@ -191,11 +202,22 @@ def fetch_all_session_data(session_key: str) -> dict:
                 results[key] = []
 
     def _group(records: list) -> dict:
+        """Group records by driver_number, preserving all records per driver."""
         out: dict = {}
         for r in records:
             dn = r.get("driver_number")
             if dn is not None:
                 out.setdefault(dn, []).append(r)
+        return out
+
+    def _group_latest(records: list) -> dict:
+        """Keep only the most-recent record per driver (for high-frequency feeds like car_data)."""
+        out: dict = {}
+        for r in records:
+            dn = r.get("driver_number")
+            if dn is not None:
+                if dn not in out or r.get("date", "") > out[dn].get("date", ""):
+                    out[dn] = r
         return out
 
     # Update weather cache with fresh data
@@ -209,14 +231,17 @@ def fetch_all_session_data(session_key: str) -> dict:
         "laps":         _group(results.get("laps", [])),
         "weather":      weather,
         "race_control": results.get("race_control", []),
+        "pit":          _group(results.get("pit", [])),
+        "car_data":     _group_latest(results.get("car_data", [])),
     }
 
 
 def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dict]:
     """
     Build the 11-feature vector from pre-fetched session data.
+    Also returns enriched metadata from pit and car_data endpoints.
 
-    Features (in order):
+    Features (in order — must match model training):
       [0]  tyre_age              — laps on current stint
       [1]  stint_number          — current stint number
       [2]  gap_to_leader         — seconds behind leader
@@ -225,9 +250,19 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
       [5]  rainfall              — 1 if raining, 0 if dry
       [6]  sector_delta          — recent sector 1 vs 3-lap avg
       [7]  tyre_age_sq           — tyre_age²
-      [8]  heat_deg_interaction  — track_temp × tyre_age
+      [8]  heat_deg_interaction  — track_temp × tyre_age / 100
       [9]  wet_stint             — rainfall × stint_number
       [10] abs_sector_delta      — |sector_delta|
+
+    Extra metadata (not model inputs):
+      lap_number        — current race lap
+      pits_completed    — number of pit stops taken so far
+      last_pit_duration — duration of most recent pit stop (seconds), or None
+      drs_active        — whether DRS was open on the last telemetry sample
+      speed             — speed in km/h at last telemetry sample
+      throttle          — throttle position 0–100 at last telemetry sample
+      brake             — brake pressure 0–100 at last telemetry sample
+      gear              — current gear at last telemetry sample
     """
     try:
         stints = session_data["stints"].get(driver_number, [])
@@ -235,25 +270,24 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
         all_laps = session_data["laps"].get(driver_number, [])
         laps = all_laps[-4:]  # last 4 laps only used for sector_delta
         weather = session_data["weather"]
+        pits = session_data["pit"].get(driver_number, [])
+        car = session_data["car_data"].get(driver_number, {})
     except Exception as e:
         logger.warning(f"build_feature_vector driver={driver_number}: {type(e).__name__}: {e}")
         return None
 
-    # Feature 0 & 1: tyre_age and stint_number
+    # ── Feature 0 & 1: tyre_age and stint_number ─────────────────────────────
     current_stint = stints[-1] if stints else {}
     lap_start = current_stint.get("lap_start", 0)
-    # lap_end is None for an ongoing stint — compute from fresh laps data so
-    # tyre_age stays accurate even when stints come from the S3 fallback cache.
     lap_end = current_stint.get("lap_end")
     if lap_end:
         tyre_age = lap_end - lap_start
     else:
-        # Count laps completed since this stint started using full lap records
         laps_in_stint = [l for l in all_laps if (l.get("lap_number") or 0) >= lap_start]
         tyre_age = len(laps_in_stint) if laps_in_stint else len(all_laps)
     stint_number = current_stint.get("stint_number", 1)
 
-    # Feature 2: gap_to_leader
+    # ── Feature 2: gap_to_leader ─────────────────────────────────────────────
     latest_interval = intervals[-1] if intervals else {}
     gap_raw = latest_interval.get("gap_to_leader", 0)
     try:
@@ -261,15 +295,14 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
     except (ValueError, TypeError):
         gap_to_leader = 0.0
 
-    # Features 3 & 4: temperatures
+    # ── Features 3 & 4: temperatures ─────────────────────────────────────────
     air_temperature = float(weather.get("air_temperature", 25.0))
     track_temperature = float(weather.get("track_temperature", 35.0))
 
-    # Feature 5: rainfall
+    # ── Feature 5: rainfall ───────────────────────────────────────────────────
     rainfall = 1 if weather.get("rainfall", False) else 0
 
-    # Feature 6: sector_delta
-    # Compare last lap sector 1 to avg of previous 3 laps sector 1
+    # ── Feature 6: sector_delta ───────────────────────────────────────────────
     sector_delta = 0.0
     if len(laps) >= 2:
         try:
@@ -285,11 +318,30 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
         except (TypeError, ValueError):
             sector_delta = 0.0
 
-    # Derived features (required by model — must match training)
+    # ── Derived features (required by model — must match training) ────────────
     tyre_age_sq = tyre_age ** 2
     heat_deg_interaction = track_temperature * tyre_age / 100.0
     wet_stint = rainfall * stint_number
     abs_sector_delta = abs(sector_delta)
+
+    # ── Extra metadata from pit endpoint ─────────────────────────────────────
+    # pit records: each entry is one pit stop (lap_number, pit_duration, pit_out_lap)
+    pit_stops = [p for p in pits if not p.get("pit_out_lap", False)]
+    pits_completed = len(pit_stops)
+    last_pit = pit_stops[-1] if pit_stops else {}
+    last_pit_duration = last_pit.get("pit_duration")  # seconds, float or None
+    last_pit_lap = last_pit.get("lap_number")         # lap number of last stop
+
+    # ── Extra metadata from car_data endpoint ────────────────────────────────
+    # car_data at ~3.7Hz — we fetch only the last 45s and take the latest entry
+    drs_active = car.get("drs", 0) >= 10   # DRS values: 0=off, 10/12/14=open
+    speed = car.get("speed", 0)            # km/h
+    throttle = car.get("throttle", 0)      # 0–100
+    brake = car.get("brake", 0)            # 0–100
+    gear = car.get("n_gear", 0)            # 0–8
+
+    # ── Current lap number ────────────────────────────────────────────────────
+    lap_number = all_laps[-1].get("lap_number", 0) if all_laps else 0
 
     driver_info = DRIVER_GRID.get(driver_number, {})
 
@@ -299,6 +351,15 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
         "team": driver_info.get("team", "Unknown"),
         "session_key": session_data.get("session_key", "unknown"),
         "tyre_compound": current_stint.get("compound", "UNKNOWN"),
+        "lap_number": lap_number,
+        "pits_completed": pits_completed,
+        "last_pit_duration": round(last_pit_duration, 2) if last_pit_duration else None,
+        "last_pit_lap": last_pit_lap,
+        "drs_active": drs_active,
+        "speed": speed,
+        "throttle": throttle,
+        "brake": brake,
+        "gear": gear,
         "features": [
             tyre_age,
             stint_number,

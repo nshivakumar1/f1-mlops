@@ -279,11 +279,11 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
     if not license_key:
         return
 
-    ts_sec = int(time.time())
+    ts_ms = int(time.time() * 1000)   # NR Metric API requires milliseconds
 
     def _push():
         try:
-            # ── Metric API: one pitstop + one win metric per driver ──────────
+            # ── Metric API: pitstop + win + telemetry metrics per driver ─────
             metrics = []
             for p in predictions:
                 pred = p.get("prediction", {})
@@ -294,7 +294,15 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
                     "team": p.get("team", ""),
                     "tyreCompound": p.get("tyre_compound", "UNKNOWN"),
                     "tyreAge": str(p["features"][0] if p.get("features") else 0),
-                    "lapNumber": str(p["features"][0] if p.get("features") else 0),
+                    "lapNumber": str(p.get("lap_number", 0)),
+                    "pitsCompleted": str(p.get("pits_completed", 0)),
+                    "lastPitDuration": str(p.get("last_pit_duration") or ""),
+                    "lastPitLap": str(p.get("last_pit_lap") or ""),
+                    "drsActive": str(p.get("drs_active", False)).lower(),
+                    "speed": str(p.get("speed", 0)),
+                    "throttle": str(p.get("throttle", 0)),
+                    "brake": str(p.get("brake", 0)),
+                    "gear": str(p.get("gear", 0)),
                     "safetyCarActive": str(safety_car_active).lower(),
                     "confidence": str(round(pred.get("confidence", 0.0), 4)),
                 }
@@ -302,16 +310,32 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
                     "name": "f1.pitstop.probability",
                     "type": "gauge",
                     "value": round(pred.get("pitstop_probability", 0.0), 4),
-                    "timestamp": ts_sec,
+                    "timestamp": ts_ms,
                     "attributes": attrs,
                 })
                 metrics.append({
                     "name": "f1.win.probability",
                     "type": "gauge",
                     "value": round(p.get("win_probability", 0.0), 4),
-                    "timestamp": ts_sec,
+                    "timestamp": ts_ms,
                     "attributes": attrs,
                 })
+                if p.get("speed"):
+                    metrics.append({
+                        "name": "f1.car.speed",
+                        "type": "gauge",
+                        "value": float(p.get("speed", 0)),
+                        "timestamp": ts_ms,
+                        "attributes": attrs,
+                    })
+                if p.get("throttle") is not None:
+                    metrics.append({
+                        "name": "f1.car.throttle",
+                        "type": "gauge",
+                        "value": float(p.get("throttle", 0)),
+                        "timestamp": ts_ms,
+                        "attributes": attrs,
+                    })
 
             metric_payload = json.dumps([{"metrics": metrics}]).encode()
             req = urllib.request.Request(
@@ -321,12 +345,12 @@ def push_to_newrelic(predictions: list, session_key: str, safety_car_active: boo
                 method="POST",
             )
             urllib.request.urlopen(req, timeout=8)
-            logger.info(f"Pushed {len(predictions)} drivers ({len(metrics)} metrics) to New Relic Metric API")
+            logger.info(f"NR: pushed {len(predictions)} drivers ({len(metrics)} metrics) to Metric API")
 
             # ── Log API: one entry per invocation with commentary ────────────
             if commentary:
                 log_payload = json.dumps([{"logs": [{
-                    "timestamp": ts_sec * 1000,
+                    "timestamp": ts_ms,
                     "message": commentary[:4095],
                     "sessionKey": session_key,
                     "safetyCarActive": safety_car_active,
