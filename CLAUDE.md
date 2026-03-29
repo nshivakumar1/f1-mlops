@@ -303,12 +303,16 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - **Correct:** `p.get("prediction", {}).get("pitstop_probability", 0)`
 - `tyre_age` is at `p["features"][0]`, not `p.get("tyre_age")`
 
-### 44. Sentry Error Tracking — Integrated but Opt-In
+### 44. Sentry Error Tracking — ACTIVE
 
 - `sentry-sdk>=2.0.0` in all 5 Lambda `requirements.txt`; `sentry_sdk.init()` at module level in each handler
-- Controlled by `SENTRY_DSN` env var — empty string disables Sentry silently (safe to deploy without it)
-- Set via `TF_VAR_sentry_dsn=https://...@....ingest.sentry.io/...` or `terraform.tfvars`
+- **Sentry org:** `infinityloopstudios`, **project:** `f1-mlops` (project ID `4511090766774272`)
+- **Issues URL:** `https://sentry.io/organizations/infinityloopstudios/issues/?project=4511090766774272`
+- DSN set on all 5 Lambdas and in GitHub Actions secret `TF_VAR_sentry_dsn`
 - `SENTRY_ENVIRONMENT` defaults to Terraform `var.environment`
+- Key capture points: session fetch fail, OpenF1 total fail, SageMaker fail, all REST handler 500s
+- `session_key` is set as a Sentry tag on every enrichment invocation for easy filtering
+- **Root cause of original no-data issue:** all errors were caught in try/except blocks — `AwsLambdaIntegration` never saw them. Fixed by adding `sentry_sdk.capture_exception(e)` at each failure point
 
 ### 41. Pre-Race Health Check — Run Before Every Race
 
@@ -441,7 +445,7 @@ pytest tests/unit/test_enrichment.py -v  # Single test file
 ## Current State (as of 2026-03-23)
 
 - **Enrichment Lambda:** Groq commentary (`groq_client.py`) + `win_probability` computed inline (position/gap/tyre/team scoring)
-- **Sentry:** Integrated across all 5 Lambdas — activate by setting `TF_VAR_sentry_dsn` before `terraform apply`
+- **Sentry:** ACTIVE — `infinityloopstudios` org, `f1-mlops` project, all 5 Lambdas reporting
 - **REST handler:** `/sessions/latest` and `/predict/positions/{session_key}` return `win_probability` per driver
 - **Pre-race check Lambda:** `f1-mlops-prerace-check` — validates 8 systems before race start
 - **Slack notifier:** AWS Chatbot → #f1-race-alerts (CloudWatch Alarms only — NR alerts go to email)
