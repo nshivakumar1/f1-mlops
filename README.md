@@ -18,7 +18,7 @@
 [![New Relic](https://img.shields.io/badge/Observability-New%20Relic-008C99?style=flat-square&logo=newrelic&logoColor=white)](https://newrelic.com)
 [![Sentry](https://img.shields.io/badge/Errors-Sentry-362D59?style=flat-square&logo=sentry&logoColor=white)](https://sentry.io)
 [![Cost](https://img.shields.io/badge/cost%2Frace%20weekend-%240.47-22c55e?style=flat-square&logo=amazonaws&logoColor=white)](#aws-resources--cost)
-[![CodeRabbit](https://img.shields.io/coderabbit/prs/github/nshivakumar1/f1-mlops?utm_source=oss&utm_medium=github&utm_campaign=nshivakumar1%2Ff1-mlops&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit)](https://coderabbit.ai)
+[![CodeRabbit](https://img.shields.io/badge/AI%20Reviews-CodeRabbit-FF570A?style=flat-square&logo=coderabbit&logoColor=white)](https://coderabbit.ai)
 
 </div>
 
