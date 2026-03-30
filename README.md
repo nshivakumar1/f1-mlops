@@ -1,6 +1,12 @@
-# 🏎️ F1 MLOps
+<div align="center">
 
-Real-time F1 Pit Stop Prediction · XGBoost on AWS · Live 2026 Season
+<img src="https://capsule-render.vercel.app/api?type=waving&color=e10600,171717&height=200&section=header&text=F1%20MLOps&fontSize=72&fontColor=ffffff&fontAlignY=38&desc=Real-time%20Pit%20Stop%20Prediction%20%C2%B7%20Live%202026%20Season&descSize=18&descAlignY=58&animation=fadeIn" width="100%"/>
+
+<a href="https://readme-typing-svg.demolab.com">
+  <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&pause=1000&color=E10600&center=true&vCenter=true&width=700&lines=Predict+pit+stops+before+the+team+radios+in.;XGBoost+%C2%B7+SageMaker+%C2%B7+AWS+Lambda+%C2%B7+OpenF1;88.5%25+accuracy+%C2%B7+%240.47+per+race+weekend;Live+since+Australian+GP+%C2%B7+3+races+and+counting." alt="Typing SVG" />
+</a>
+
+<br/><br/>
 
 [![CI](https://github.com/nshivakumar1/f1-mlops/actions/workflows/ci.yml/badge.svg)](https://github.com/nshivakumar1/f1-mlops/actions/workflows/ci.yml)
 [![Tests](https://img.shields.io/badge/tests-20%20passing-22c55e?style=flat-square&logo=pytest&logoColor=white)](tests/unit/)
@@ -14,24 +20,44 @@ Real-time F1 Pit Stop Prediction · XGBoost on AWS · Live 2026 Season
 [![Cost](https://img.shields.io/badge/cost%2Frace%20weekend-%240.47-22c55e?style=flat-square&logo=amazonaws&logoColor=white)](#aws-resources--cost)
 [![CodeRabbit](https://img.shields.io/coderabbit/prs/github/nshivakumar1/f1-mlops?utm_source=oss&utm_medium=github&utm_campaign=nshivakumar1%2Ff1-mlops&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit)](https://coderabbit.ai)
 
-> **Predict, with 88.5% accuracy, which F1 driver will pit — before the team even radios in.**
+</div>
 
 ---
 
-## What Is This?
+## Demo
 
-Every **60 seconds** during a live race, this system:
+> 📸 **Add your screen recording here** — drag and drop an MP4 or GIF directly into this file on GitHub.com
+>
+> Suggested recording: open the live frontend during a race, showing predictions updating every 30s with driver cards, pitstop probabilities, and AI commentary. GitHub supports MP4 up to 10MB natively.
 
-1. 🔌 Pulls telemetry from the **OpenF1 API** (OAuth2) for all 22 drivers — stints, intervals, laps, weather, race control
-2. 🧠 Engineers **11 features** per driver and scores them through an **XGBoost model** on SageMaker Serverless
-3. 🏆 Computes **win probability** inline using live race state (position, gaps, tyre freshness, team strength)
-4. 💬 Generates **AI strategy commentary** via Groq (Llama 3.3 70B) — two sharp broadcast-style sentences
-5. 💾 Stores predictions in **S3** and serves them via **API Gateway** to the live frontend
-6. 🔔 Fires **Slack alerts** (AWS Chatbot → #f1-race-alerts) when pit probability exceeds 85%
-7. 📊 Streams **custom events + infra metrics** to **New Relic** dashboards in near real-time
-8. 🩺 Ships **errors and traces** to **Sentry** via the NR Lambda layer
+---
 
-Built for the **2026 Formula 1 season** — live since the Australian GP (Melbourne, March 14). Survived 3 race weekends and counting.
+## What Happens Every 60 Seconds
+
+<div align="center">
+
+```
+OpenF1 API  ──►  Lambda: enrichment  ──►  SageMaker XGBoost
+   (22 drivers)       (11 features)         (AUC 0.8854)
+       │                   │                      │
+       │              Groq Llama 3.3          S3 + API GW
+       │              (AI commentary)         (frontend)
+       └──────────────────────────────────►  New Relic
+                                             Slack #f1-race-alerts
+```
+
+</div>
+
+Every lap, for all 22 drivers simultaneously:
+
+1. 🔌 **Pull telemetry** from OpenF1 API (OAuth2) — stints, intervals, laps, weather, race control
+2. 🧠 **Engineer 11 features** per driver (7 raw + 4 derived) and score through XGBoost on SageMaker Serverless
+3. 🏆 **Compute win probability** inline — position, gaps, tyre freshness, team strength
+4. 💬 **Generate AI commentary** via Groq (Llama 3.3 70B) — two broadcast-style sentences
+5. 💾 **Store predictions** in S3 and serve via API Gateway to the live Next.js frontend
+6. 🔔 **Fire Slack alerts** when pit probability > 85% (AWS Chatbot → #f1-race-alerts)
+7. 📊 **Stream custom events** to New Relic dashboards in near real-time
+8. 🩺 **Capture errors** to Sentry across all 5 Lambda functions
 
 ---
 
@@ -95,16 +121,20 @@ Built for the **2026 Formula 1 season** — live since the Australian GP (Melbou
 
 ## Prediction Models
 
+<div align="center">
+
 | Model | Algorithm | Metric | Status |
 |:------|:----------|:------:|:------:|
-| 🟢 **Pitstop** | XGBoost | AUC **0.8854** ✅ | Deployed (SageMaker Serverless) |
-| 🏆 **Win Probability** | Inline scoring | Position · Gap · Tyre · Team | Live (no extra endpoint) |
-| 🔵 Position Finish | Random Forest | 12 features trained | Pending deployment |
-| 🟡 Safety Car | LightGBM | F1 score | Planned |
+| 🟢 **Pitstop** | XGBoost | AUC **0.8854** | ✅ Deployed (SageMaker Serverless) |
+| 🏆 **Win Probability** | Inline scoring | Position · Gap · Tyre · Team | ✅ Live |
+| 🔵 Position Finish | Random Forest | 12 features trained | 🔜 Pending deployment |
+| 🟡 Safety Car | LightGBM | F1 score | 📋 Planned |
+
+</div>
 
 ### Feature Engineering
 
-```text
+```
 RAW (7)                          ENGINEERED (4)
 ──────────────────────           ──────────────────────────────────────
 tyre_age          ──────────────► tyre_age²              (degradation curve)
@@ -114,15 +144,15 @@ air_temperature                 ► |sector_delta|          (consistency proxy)
 track_temperature
 rainfall
 sector_delta
-```
 
-**11 features → 1 probability score → PIT / STAY OUT**
+                    11 features → 1 probability → PIT / STAY OUT
+```
 
 ### Win Probability Formula
 
-Computed live each lap — no second model endpoint required:
+<div align="center">
 
-| Signal | Weight (normal) | Weight (safety car) |
+| Signal | Weight (racing) | Weight (safety car) |
 |:-------|:---------------:|:-------------------:|
 | Gap ranking (position) | 40% | 55% |
 | Gap to leader | 25% | 0% |
@@ -130,20 +160,33 @@ Computed live each lap — no second model endpoint required:
 | Tyre freshness | 10% | 15% |
 | Pitstop stability | 5% | 10% |
 
+</div>
+
 ---
 
 ## Live Endpoints
 
+**Base URL:** `https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1`
+
+<div align="center">
+
 | Endpoint | Description |
 |:---------|:------------|
-| `GET /sessions/latest` | Latest predictions for all 22 drivers + win probability + AI commentary |
+| `GET /sessions/latest` | All 22 drivers — predictions, win probability, AI commentary |
 | `GET /sessions` | All available session keys |
 | `GET /predict/positions/{session_key}` | Cached predictions for a specific session |
-| `GET /positions/latest` | Live driver XY positions proxied from OpenF1 |
-| `GET /track/{circuit_key}` | Circuit layout from Multiviewer (SVG coordinates) |
+| `GET /positions/latest` | Live driver XY positions from OpenF1 |
+| `GET /track/{circuit_key}` | Circuit layout (SVG coordinates) |
 | `POST /predict/pitstop` | On-demand single-driver prediction |
 
-**Base URL:** `https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1`
+</div>
+
+```bash
+API="https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1"
+
+# Latest predictions — all 22 drivers
+curl "$API/sessions/latest" | jq '{session: .session_key, commentary: .commentary, top3: .predictions[:3]}'
+```
 
 ---
 
@@ -162,8 +205,7 @@ node --version      # ≥ 20 (frontend)
 
 ```bash
 cd terraform/environments/dev
-terraform init
-terraform apply -auto-approve
+terraform init && terraform apply -auto-approve
 ```
 
 ### 2 — Train & Deploy Model
@@ -182,8 +224,7 @@ python3 scripts/train_and_deploy.py --bucket f1-mlops-data-297997106614
 ```
 
 Expected output:
-
-```text
+```
 Validation AUC: 0.8854  ✅  (threshold: 0.82)
 Endpoint InService: f1-mlops-pitstop-endpoint
 Smoke test PASSED
@@ -192,46 +233,25 @@ Smoke test PASSED
 ### 3 — Run Frontend Locally
 
 ```bash
-cd frontend
-npm install
-npm run dev        # http://localhost:3000
-npm run build      # production build + type check
-```
-
-### 4 — Query the API
-
-```bash
-API="https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1"
-
-# Latest predictions — all 22 drivers with win probability + AI commentary
-curl "$API/sessions/latest" | jq '{session: .session_key, commentary: .commentary, top3: .predictions[:3]}'
-
-# Historical session
-curl "$API/predict/positions/11245" | jq '.predictions[:5]'
-
-# On-demand prediction
-curl -X POST "$API/predict/pitstop" \
-  -H "x-api-key: <your-key>" \
-  -H "Content-Type: application/json" \
-  -d '{"features": [20, 2, 5.0, 28.0, 44.0, 0, 0.3], "driver_number": 1}'
+cd frontend && npm install && npm run dev   # http://localhost:3000
 ```
 
 ---
 
 ## Repository Structure
 
-```text
+```
 f1-mlops/
 │
 ├── 🔬  lambda/
 │   ├── enrichment/        ← live poller: OpenF1 → features → SageMaker → S3/SNS/NR
-│   │   ├── handler.py     ← main Lambda (win prob, AI commentary, tyre cache)
+│   │   ├── handler.py     ← win prob · AI commentary · tyre cache · race finish detection
 │   │   ├── openf1_client.py
 │   │   └── groq_client.py ← Llama 3.3 70B via Groq (AI commentary)
-│   ├── rest_handler/      ← API Gateway: /sessions, /positions, /track, /pitstop
+│   ├── rest_handler/      ← API Gateway: /sessions · /positions · /track · /pitstop
 │   ├── prewarm/           ← SageMaker pre-warmer (eliminates cold start)
 │   ├── slack_notifier/    ← SNS → Slack Block Kit alerts
-│   └── prerace_check/     ← health checks for all 8 systems (run 30min pre-race)
+│   └── prerace_check/     ← validates 8 systems 30 min before race start
 │
 ├── 🧠  ml/
 │   ├── training/pitstop/  ← XGBoost model + SageMaker inference script
@@ -245,7 +265,7 @@ f1-mlops/
 │       └── about/         ← architecture overview
 │
 ├── 📊  monitoring/
-│   └── newrelic_dashboard.json  ← import into NR UI to recreate dashboards
+│   └── newrelic_dashboard.json  ← import into NR UI
 │
 ├── 📜  scripts/
 │   ├── train_and_deploy.py
@@ -265,25 +285,9 @@ f1-mlops/
 
 ---
 
-## AWS Resources & Cost
-
-| Resource | Name | Cost / Race Weekend |
-|:---------|:-----|--------------------:|
-| SageMaker Serverless | `f1-mlops-pitstop-endpoint` | ~$0.40 |
-| Lambda × 5 | `enrichment · rest-handler · prewarm · slack-notifier · prerace-check` | ~$0.01 |
-| API Gateway | `f1-mlops-api` | ~$0.01 |
-| Kinesis Firehose → New Relic | `f1-mlops-newrelic-metrics` | ~$0.05 |
-| S3 | `f1-mlops-{data,artifacts}` | ~$0.05 |
-| EventBridge + SNS + Secrets | — | $0.00 |
-| **TOTAL** | | **~$0.52** |
-
-> ELK stack and Grafana EC2 have been **retired** — replaced by New Relic (free tier covers race day usage).
-
----
-
 ## CI/CD Pipeline
 
-```text
+```
 git push origin main
         │
         ▼
@@ -307,6 +311,26 @@ git push origin main
 │      (Terraform archive_file re-zips source-only)      │
 └───────────────────────────────────────────────────────┘
 ```
+
+---
+
+## AWS Resources & Cost
+
+<div align="center">
+
+| Resource | Name | Cost / Race Weekend |
+|:---------|:-----|--------------------:|
+| SageMaker Serverless | `f1-mlops-pitstop-endpoint` | ~$0.40 |
+| Lambda × 5 | `enrichment · rest-handler · prewarm · slack-notifier · prerace-check` | ~$0.01 |
+| API Gateway | `f1-mlops-api` | ~$0.01 |
+| Kinesis Firehose → New Relic | `f1-mlops-newrelic-metrics` | ~$0.05 |
+| S3 | `f1-mlops-{data,artifacts}` | ~$0.05 |
+| EventBridge + SNS + Secrets | — | $0.00 |
+| **TOTAL** | | **~$0.52** |
+
+</div>
+
+> ELK stack and Grafana EC2 have been **retired** — replaced by New Relic (free tier covers race day usage).
 
 ---
 
@@ -334,72 +358,38 @@ curl https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1/sessions/latest \
 
 # ④ Monitor in New Relic
 #   one.newrelic.com → Query: SELECT * FROM F1PitstopPrediction SINCE 30 minutes ago
-#   Dashboard: import monitoring/newrelic_dashboard.json
 
-# ⑤ After race — disable poller
+# ⑤ After race — disable poller (also fires automatically on chequered flag)
 aws events disable-rule --name f1-mlops-live-poller --region us-east-1
 ```
-
-### Pre-Race Check Validates
-
-| System | What It Checks |
-|:-------|:--------------|
-| SageMaker | Endpoint is `InService` |
-| OpenF1 API | Returns 200 with session list |
-| Groq secret | `gsk_...` key present in Secrets Manager |
-| New Relic key | License key present |
-| OpenF1 credentials | OAuth2 username/password present |
-| EventBridge poller | Rule state (should be DISABLED pre-race) |
-| S3 write | Write + delete probe object succeeds |
-| Prewarm Lambda | Invocation succeeds |
 
 ---
 
 ## Observability
 
-### New Relic (primary)
+### New Relic
 
-| Data Type | Source | Query |
-|:----------|:-------|:------|
+| Data | Source | Query |
+|:-----|:-------|:------|
 | Live predictions | Enrichment Lambda → Insights API | `SELECT * FROM F1PitstopPrediction SINCE 30 min ago` |
 | Lambda metrics | CW Metric Stream → Firehose | `SELECT sum(aws.lambda.Invocations) FROM Metric FACET aws.lambda.FunctionName` |
 | SageMaker metrics | CW Metric Stream → Firehose | `SELECT sum(aws.sagemaker.ModelLatency) FROM Metric` |
-| Lambda logs + traces | NR Lambda Layer (Python 3.12) | NR APM → Lambda functions |
 
-**Custom event fields:** `sessionKey · driverNumber · driverCode · team · pitstopProbability · confidence · tyreCompound · tyreAge · lapNumber · safetyCarActive · winProbability · aiCommentary`
-
-**Dashboard:** Import `monitoring/newrelic_dashboard.json` into NR UI → Dashboards → Import.
+**Custom event fields:** `sessionKey · driverNumber · driverCode · team · pitstopProbability · tyreCompound · tyreAge · lapNumber · safetyCarActive · winProbability · aiCommentary`
 
 ### Sentry
 
-Error tracking on all 5 Lambda functions. DSN stored in `TF_VAR_SENTRY_DSN` GitHub secret, injected at deploy time.
+Error tracking on all 5 Lambda functions. `capture_exception()` at every key failure point (session fetch, OpenF1 failure, SageMaker failure, REST handler errors).
 
-### Slack Alerts
+### Slack
 
 `#f1-race-alerts` via **CloudWatch Alarm → SNS → AWS Chatbot** when `pitstop_probability > 0.85`.
 
 ---
 
-## SageMaker Endpoint
-
-```text
-Container:   sagemaker-xgboost:1.7-1
-Mode:        Serverless  (zero idle cost · 2048MB · max_concurrency=10)
-
-Input:
-  {"instances": [[tyre_age, stint_no, gap, air_temp, track_temp,
-                  rainfall, sector_delta,
-                  tyre_age_sq, heat_deg, wet_stint, abs_delta]]}
-
-Output:
-  {"predictions": [{"pitstop_probability": 0.731,
-                    "confidence": 0.462,
-                    "recommendation": "PIT"}]}
-```
-
----
-
 ## 2026 Season
+
+<div align="center">
 
 | Race | Circuit | Weekend | Status |
 |:-----|:--------|:--------|:------:|
@@ -410,6 +400,8 @@ Output:
 | 🇸🇦 R5 | Jeddah | Apr 25–27 | — |
 | 🇺🇸 R6 | Miami | May 2–4 | — |
 | ⋮ | ⋮ | ⋮ | |
+
+</div>
 
 ---
 
@@ -425,7 +417,9 @@ Tests use `MOCK_SESSION_DATA` dicts — no API mocking required, no live AWS cal
 
 ---
 
-Built with obsession over a single race weekend.
+<div align="center">
+
+### Tech Stack
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![AWS Lambda](https://img.shields.io/badge/AWS_Lambda-FF9900?style=for-the-badge&logo=awslambda&logoColor=white)
@@ -437,3 +431,11 @@ Built with obsession over a single race weekend.
 ![Groq](https://img.shields.io/badge/Groq_Llama_3.3-F55036?style=for-the-badge&logo=meta&logoColor=white)
 ![OpenF1](https://img.shields.io/badge/OpenF1_API-e10600?style=for-the-badge)
 ![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)
+
+<br/>
+
+*Built with obsession over a single race weekend.*
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=e10600,171717&height=100&section=footer" width="100%"/>
+
+</div>
