@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=e10600,171717&height=200&section=header&text=F1%20MLOps&fontSize=72&fontColor=ffffff&fontAlignY=38&desc=Real-time%20Pit%20Stop%20Prediction%20%C2%B7%20Live%202026%20Season&descSize=18&descAlignY=58&animation=fadeIn" width="100%"/>
+<img src="https://capsule-render.vercel.app/api?type=waving&color=e10600,b30000&height=200&section=header&text=F1%20MLOps&fontSize=72&fontColor=ffffff&fontAlignY=38&desc=Real-time%20Pit%20Stop%20Prediction%20%C2%B7%20Live%202026%20Season&descSize=18&descAlignY=58&animation=fadeIn" width="100%"/>
 
 <a href="https://readme-typing-svg.demolab.com">
   <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=22&pause=1000&color=E10600&center=true&vCenter=true&width=700&lines=Predict+pit+stops+before+the+team+radios+in.;XGBoost+%C2%B7+SageMaker+%C2%B7+AWS+Lambda+%C2%B7+OpenF1;88.5%25+accuracy+%C2%B7+%240.47+per+race+weekend;Live+since+Australian+GP+%C2%B7+3+races+and+counting." alt="Typing SVG" />
@@ -436,6 +436,6 @@ Tests use `MOCK_SESSION_DATA` dicts — no API mocking required, no live AWS cal
 
 *Built with obsession over a single race weekend.*
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=e10600,171717&height=100&section=footer" width="100%"/>
+<img src="https://capsule-render.vercel.app/api?type=waving&color=b30000,e10600&height=100&section=footer" width="100%"/>
 
 </div>
