@@ -391,15 +391,34 @@ Error tracking on all 5 Lambda functions. `capture_exception()` at every key fai
 
 <div align="center">
 
-| Race | Circuit | Weekend | Status |
-|:-----|:--------|:--------|:------:|
-| 🇦🇺 R1 | Melbourne | Mar 14–16 | ✅ Live |
-| 🇨🇳 R2 | Shanghai | Mar 21–23 | ✅ Live |
-| 🇯🇵 R3 | Suzuka | Mar 28–30 | ✅ Live |
-| 🇧🇭 R4 | ~~Bahrain~~ | ~~Apr 11–13~~ | ❌ Cancelled |
-| 🇸🇦 R5 | ~~Jeddah~~ | ~~Apr 25–27~~ | ❌ Cancelled |
-| 🇺🇸 R6 | **Miami** | **May 2–4** | 🟡 Next |
-| ⋮ | ⋮ | ⋮ | |
+| # | Flag | Race | Circuit | Weekend | System | Status |
+|:-:|:----:|:-----|:--------|:--------|:------:|:------:|
+| R1 | 🇦🇺 | Australian GP | Melbourne | Mar 14–16 | ✅ Built | ✅ Live |
+| R2 | 🇨🇳 | Chinese GP | Shanghai | Mar 21–23 | ✅ Built | ✅ Live |
+| R3 | 🇯🇵 | Japanese GP | Suzuka | Mar 28–30 | ✅ Built | ✅ Live |
+| R4 | 🇧🇭 | ~~Bahrain GP~~ | ~~Sakhir~~ | ~~Apr 11–13~~ | — | ❌ Cancelled |
+| R5 | 🇸🇦 | ~~Saudi Arabian GP~~ | ~~Jeddah~~ | ~~Apr 25–27~~ | — | ❌ Cancelled |
+| R6 | 🇺🇸 | **Miami GP** | **Miami** | **May 2–4** | ✅ Ready | 🟡 Next |
+| R7 | 🇮🇹 | Emilia Romagna GP | Imola | May 16–18 | ✅ Ready | — |
+| R8 | 🇲🇨 | Monaco GP | Monte Carlo | May 23–25 | ✅ Ready | — |
+| R9 | 🇪🇸 | Spanish GP | Barcelona | Jun 6–8 | ✅ Ready | — |
+| R10 | 🇨🇦 | Canadian GP | Montreal | Jun 13–15 | ✅ Ready | — |
+| R11 | 🇦🇹 | Austrian GP | Red Bull Ring | Jun 27–29 | ✅ Ready | — |
+| R12 | 🇬🇧 | British GP | Silverstone | Jul 4–6 | ✅ Ready | — |
+| R13 | 🇧🇪 | Belgian GP | Spa | Jul 25–27 | ✅ Ready | — |
+| R14 | 🇭🇺 | Hungarian GP | Budapest | Aug 1–3 | ✅ Ready | — |
+| R15 | 🇳🇱 | Dutch GP | Zandvoort | Aug 29–31 | ✅ Ready | — |
+| R16 | 🇮🇹 | Italian GP | Monza | Sep 5–7 | ✅ Ready | — |
+| R17 | 🇦🇿 | Azerbaijan GP | Baku | Sep 19–21 | ✅ Ready | — |
+| R18 | 🇸🇬 | Singapore GP | Marina Bay | Oct 3–5 | ✅ Ready | — |
+| R19 | 🇺🇸 | United States GP | Austin | Oct 17–19 | ✅ Ready | — |
+| R20 | 🇲🇽 | Mexico City GP | Mexico City | Oct 24–26 | ✅ Ready | — |
+| R21 | 🇧🇷 | São Paulo GP | Interlagos | Nov 7–9 | ✅ Ready | — |
+| R22 | 🇺🇸 | Las Vegas GP | Las Vegas | Nov 20–22 | ✅ Ready | — |
+| R23 | 🇶🇦 | Qatar GP | Lusail | Nov 28–30 | ✅ Ready | — |
+| R24 | 🇦🇪 | Abu Dhabi GP | Yas Marina | Dec 5–7 | ✅ Ready | — |
+
+> **System status:** ✅ Built = ran live · ✅ Ready = system deployed, poller on standby · ❌ Cancelled = race not held
 
 </div>
 
