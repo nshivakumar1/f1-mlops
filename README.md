@@ -396,9 +396,9 @@ Error tracking on all 5 Lambda functions. `capture_exception()` at every key fai
 | 🇦🇺 R1 | Melbourne | Mar 14–16 | ✅ Live |
 | 🇨🇳 R2 | Shanghai | Mar 21–23 | ✅ Live |
 | 🇯🇵 R3 | Suzuka | Mar 28–30 | ✅ Live |
-| 🇧🇭 R4 | **Bahrain** | **Apr 11–13** | 🟡 Next |
-| 🇸🇦 R5 | Jeddah | Apr 25–27 | — |
-| 🇺🇸 R6 | Miami | May 2–4 | — |
+| 🇧🇭 R4 | ~~Bahrain~~ | ~~Apr 11–13~~ | ❌ Cancelled |
+| 🇸🇦 R5 | ~~Jeddah~~ | ~~Apr 25–27~~ | ❌ Cancelled |
+| 🇺🇸 R6 | **Miami** | **May 2–4** | 🟡 Next |
 | ⋮ | ⋮ | ⋮ | |
 
 </div>

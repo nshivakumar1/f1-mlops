@@ -461,7 +461,7 @@ pytest tests/unit/test_enrichment.py -v  # Single test file
 
 ## Feature Release Roadmap
 
-> All releases are GitHub Releases (tagged). Start implementation after Bahrain GP.
+> All releases are GitHub Releases (tagged). Bahrain GP cancelled (Middle East conflict) — start implementation after Miami GP (May 2–4).
 
 ### v1.1 — Post-Race Accuracy Tracker
 
