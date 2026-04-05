@@ -38,6 +38,9 @@ terraform/modules/lambda/*.zip
 evaluate/
 .code-review-graph/
 
+# Playwright MCP
+.playwright-mcp/
+
 # Test reports
 reports/
 .coverage

@@ -54,54 +54,9 @@ Every **60 seconds** during a live race, for all 22 drivers simultaneously:
 | 🔔 **Alert** | Slack notification when pit probability > 85% via AWS Chatbot |
 | 📊 **Observe** | Custom events streamed to New Relic · errors captured to Sentry |
 
-<details>
-<summary>⚙️ Full Architecture Diagram</summary>
+![What Happens Every 60 Seconds](substack-assets/02-60s-loop.png)
 
-```text
-                        ┌──────────────────────────────────────────┐
-                        │            EVERY 60 SECONDS              │
-                        │   EventBridge → Lambda: enrichment       │
-                        └──────────────────┬───────────────────────┘
-                                           │
-                   ┌───────────────────────▼───────────────────────┐
-                   │          OpenF1 API  (OAuth2 auth)            │
-                   │  stints · intervals · laps · weather · SC     │
-                   │         3 batch calls → 22 drivers            │
-                   └───────────────────────┬───────────────────────┘
-                                           │
-                   ┌───────────────────────▼───────────────────────┐
-                   │      Lambda: enrichment  (60s timeout)        │
-                   │  • 11 features/driver (7 raw + 4 engineered)  │
-                   │  • Win probability (inline, no extra endpoint) │
-                   │  • AI commentary  (Groq / Llama 3.3 70B)      │
-                   │  • Chequered flag detection + auto-disable     │
-                   └──────┬─────────────┬──────────────┬──────────┘
-                          │             │              │
-           ┌──────────────▼──┐  ┌───────▼──────┐  ┌───▼────────────────┐
-           │   SageMaker     │  │      S3       │  │    New Relic       │
-           │  Serverless     │  │ logs/infer/   │  │ F1PitstopPrediction│
-           │  XGBoost 0.8854 │  │ session_{k}/  │  │  custom events     │
-           └──────┬──────────┘  └───────┬───────┘  └────────────────────┘
-                  │                     │
-           ┌──────▼──────────┐  ┌───────▼──────────────────────────────┐
-           │  prob > 0.85?   │  │         API Gateway  (REST)          │
-           │  SNS → Chatbot  │  │  GET /sessions/latest                │
-           │  → Slack 🔔     │  │  GET /predict/positions/{key}        │
-           └─────────────────┘  │  GET /positions/latest               │
-                                │  GET /track/{circuit_key}            │
-                                └───────┬──────────────────────────────┘
-                                        │
-                   ┌────────────────────▼──────────────────────────┐
-                   │       Next.js Frontend  (Vercel)              │
-                   │  Live dashboard · Race history · Circuit map  │
-                   │  Polls API every 30s · Map updates every 5s   │
-                   └───────────────────────────────────────────────┘
-
-  GitHub → GitHub Actions [Test → Plan → Approve → Deploy]
-  CW Metric Stream → Kinesis Firehose → New Relic
-```
-
-</details>
+![F1 MLOps System Architecture](substack-assets/01-architecture.png)
 
 ---
 
@@ -294,20 +249,7 @@ aws events disable-rule --name f1-mlops-live-poller --region us-east-1
 
 </details>
 
-<details>
-<summary>💰 AWS Cost Breakdown</summary>
-
-| Resource | Cost / Race Weekend |
-|:---------|--------------------:|
-| SageMaker Serverless | ~$0.40 |
-| Lambda × 5 | ~$0.01 |
-| API Gateway | ~$0.01 |
-| Kinesis Firehose → New Relic | ~$0.05 |
-| S3 | ~$0.05 |
-| EventBridge + SNS + Secrets | $0.00 |
-| **TOTAL** | **~$0.52** |
-
-</details>
+![Cost Breakdown & Project Stats](substack-assets/05-cost-stats.png)
 
 <details>
 <summary>🧠 Code Graph — Benchmark Results</summary>

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    width: 1200px;
+    padding: 60px;
+  }
+  .title {
+    text-align: center;
+    color: #ffffff;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #8b949e;
+    font-size: 15px;
+    margin-bottom: 50px;
+  }
+  .red { color: #e10600; }
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 40px;
+  }
+  .node {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 18px 20px;
+    text-align: center;
+    min-width: 130px;
+  }
+  .node.highlight {
+    border-color: #e10600;
+    box-shadow: 0 0 20px rgba(225,6,0,0.15);
+  }
+  .node-icon { font-size: 26px; margin-bottom: 8px; }
+  .node-title {
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .node-sub {
+    color: #8b949e;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .arrow {
+    color: #e10600;
+    font-size: 22px;
+    padding: 0 6px;
+    flex-shrink: 0;
+  }
+  .section-label {
+    color: #8b949e;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 14px;
+    padding-left: 4px;
+  }
+  .outputs {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-top: 0;
+  }
+  .output-node {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 16px 20px;
+    text-align: center;
+    flex: 1;
+    max-width: 180px;
+  }
+  .divider {
+    width: 100%;
+    height: 1px;
+    background: #21262d;
+    margin: 30px 0;
+  }
+  .stats-row {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+  }
+  .stat {
+    text-align: center;
+  }
+  .stat-number {
+    color: #e10600;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -1px;
+  }
+  .stat-label {
+    color: #8b949e;
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  .badge {
+    display: inline-block;
+    background: rgba(225,6,0,0.1);
+    border: 1px solid rgba(225,6,0,0.3);
+    color: #e10600;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 6px;
+  }
+  .center-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .arrow-down {
+    color: #e10600;
+    font-size: 22px;
+  }
+  .footer {
+    text-align: center;
+    color: #484f58;
+    font-size: 12px;
+    margin-top: 40px;
+  }
+</style>
+</head>
+<body>
+
+<div class="title">F1 MLOps — <span class="red">System Architecture</span></div>
+<div class="subtitle">Real-time pit stop prediction for all 22 drivers, every 60 seconds</div>
+
+<!-- Main pipeline row -->
+<div class="flow">
+  <div class="node">
+    <div class="node-icon">🏎️</div>
+    <div class="node-title">OpenF1 API</div>
+    <div class="node-sub">7 endpoints<br/>OAuth2 · 3 batch calls</div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="node highlight">
+    <div class="node-icon">⚡</div>
+    <div class="node-title">Enrichment Lambda</div>
+    <div class="node-sub">Feature engineering<br/>11 features/driver</div>
+    <div class="badge">Core</div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="node highlight">
+    <div class="node-icon">🧠</div>
+    <div class="node-title">SageMaker</div>
+    <div class="node-sub">XGBoost Serverless<br/>AUC 0.8854</div>
+    <div class="badge">ML</div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="node">
+    <div class="node-icon">🤖</div>
+    <div class="node-title">Groq LLM</div>
+    <div class="node-sub">Llama 3.3 70B<br/>AI Commentary</div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="node">
+    <div class="node-icon">🪣</div>
+    <div class="node-title">S3</div>
+    <div class="node-sub">JSON per cycle<br/>Tyre cache</div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- Outputs row -->
+<div class="section-label" style="text-align:center">Outputs & Observability</div>
+<div class="outputs">
+  <div class="output-node">
+    <div class="node-icon">📊</div>
+    <div class="node-title">New Relic</div>
+    <div class="node-sub">F1PitstopPrediction<br/>custom events · live</div>
+  </div>
+  <div class="output-node">
+    <div class="node-icon">🌐</div>
+    <div class="node-title">Next.js Frontend</div>
+    <div class="node-sub">Vercel · polls 30s<br/>pitstop + win prob</div>
+  </div>
+  <div class="output-node">
+    <div class="node-icon">💬</div>
+    <div class="node-title">Slack Alerts</div>
+    <div class="node-sub">CloudWatch → SNS<br/>→ AWS Chatbot</div>
+  </div>
+  <div class="output-node">
+    <div class="node-icon">🔍</div>
+    <div class="node-title">Sentry</div>
+    <div class="node-sub">Error tracking<br/>5 Lambda functions</div>
+  </div>
+  <div class="output-node">
+    <div class="node-icon">🔁</div>
+    <div class="node-title">GitHub Actions</div>
+    <div class="node-sub">Test → Plan<br/>→ Approve → Deploy</div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- Stats -->
+<div class="stats-row">
+  <div class="stat">
+    <div class="stat-number">22</div>
+    <div class="stat-label">Drivers Tracked</div>
+  </div>
+  <div class="stat">
+    <div class="stat-number">60s</div>
+    <div class="stat-label">Update Interval</div>
+  </div>
+  <div class="stat">
+    <div class="stat-number">88.5%</div>
+    <div class="stat-label">Model AUC</div>
+  </div>
+  <div class="stat">
+    <div class="stat-number">11</div>
+    <div class="stat-label">Features / Driver</div>
+  </div>
+  <div class="stat">
+    <div class="stat-number">$0.47</div>
+    <div class="stat-label">Cost / Race Weekend</div>
+  </div>
+  <div class="stat">
+    <div class="stat-number">5</div>
+    <div class="stat-label">Lambda Functions</div>
+  </div>
+</div>
+
+<div class="footer">github.com/nshivakumar1/f1-mlops</div>
+
+</body>
+</html>

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    width: 1200px;
+    padding: 60px;
+  }
+  .title {
+    text-align: center;
+    color: #ffffff;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #8b949e;
+    font-size: 15px;
+    margin-bottom: 50px;
+  }
+  .red { color: #e10600; }
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 30px;
+  }
+  .panel {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 16px;
+    padding: 28px;
+  }
+  .panel-title {
+    color: #8b949e;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 20px;
+  }
+  /* Cost bars */
+  .cost-item {
+    margin-bottom: 16px;
+  }
+  .cost-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .cost-service {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #c9d1d9;
+    font-size: 13px;
+  }
+  .cost-service-icon { font-size: 16px; }
+  .cost-amount {
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .bar-track {
+    background: #21262d;
+    border-radius: 4px;
+    height: 8px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: #e10600;
+  }
+  .cost-total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #30363d;
+    padding-top: 16px;
+    margin-top: 4px;
+  }
+  .cost-total-label {
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .cost-total-amount {
+    color: #e10600;
+    font-size: 24px;
+    font-weight: 900;
+  }
+  /* Stats grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+  .stat-card {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .stat-icon { font-size: 20px; margin-bottom: 8px; }
+  .stat-number {
+    color: #e10600;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+  .stat-label {
+    color: #8b949e;
+    font-size: 11px;
+    margin-top: 5px;
+    line-height: 1.3;
+  }
+  /* Bottom roadmap */
+  .roadmap {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 16px;
+    padding: 28px;
+  }
+  .roadmap-title {
+    color: #8b949e;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 20px;
+  }
+  .roadmap-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .roadmap-item {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .roadmap-version {
+    background: rgba(225,6,0,0.1);
+    border: 1px solid rgba(225,6,0,0.3);
+    color: #e10600;
+    font-size: 11px;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 20px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .roadmap-content {}
+  .roadmap-name {
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .roadmap-desc {
+    color: #8b949e;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .footer-note {
+    text-align: center;
+    color: #484f58;
+    font-size: 12px;
+    margin-top: 30px;
+  }
+</style>
+</head>
+<body>
+
+<div class="title">$0.47 Per Race Weekend — <span class="red">Full Breakdown</span></div>
+<div class="subtitle">Production ML on AWS. Scales to zero between races. Costs less than a coffee.</div>
+
+<div class="layout">
+
+  <!-- Cost breakdown -->
+  <div class="panel">
+    <div class="panel-title">AWS Cost / Race Weekend</div>
+
+    <div class="cost-item">
+      <div class="cost-row">
+        <div class="cost-service"><span class="cost-service-icon">🧠</span> SageMaker Serverless</div>
+        <div class="cost-amount">~$0.40</div>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:85%"></div></div>
+    </div>
+
+    <div class="cost-item">
+      <div class="cost-row">
+        <div class="cost-service"><span class="cost-service-icon">📊</span> Kinesis → New Relic</div>
+        <div class="cost-amount">~$0.05</div>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:11%; opacity:0.7"></div></div>
+    </div>
+
+    <div class="cost-item">
+      <div class="cost-row">
+        <div class="cost-service"><span class="cost-service-icon">🪣</span> S3 Storage</div>
+        <div class="cost-amount">~$0.05</div>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:11%; opacity:0.7"></div></div>
+    </div>
+
+    <div class="cost-item">
+      <div class="cost-row">
+        <div class="cost-service"><span class="cost-service-icon">⚡</span> Lambda × 5</div>
+        <div class="cost-amount">~$0.01</div>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:2%; opacity:0.5"></div></div>
+    </div>
+
+    <div class="cost-item">
+      <div class="cost-row">
+        <div class="cost-service"><span class="cost-service-icon">🔌</span> API Gateway</div>
+        <div class="cost-amount">~$0.01</div>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:2%; opacity:0.5"></div></div>
+    </div>
+
+    <div class="cost-item">
+      <div class="cost-row">
+        <div class="cost-service"><span class="cost-service-icon">📅</span> EventBridge + SNS</div>
+        <div class="cost-amount">$0.00</div>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:0.5%; opacity:0.3"></div></div>
+    </div>
+
+    <div class="cost-total-row">
+      <div class="cost-total-label">Total / Race Weekend</div>
+      <div class="cost-total-amount">$0.47</div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="panel">
+    <div class="panel-title">Project Stats</div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon">🏁</div>
+        <div class="stat-number">3</div>
+        <div class="stat-label">Races Live in 2026 Season</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🎯</div>
+        <div class="stat-number">88.5%</div>
+        <div class="stat-label">XGBoost Model AUC</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🏎️</div>
+        <div class="stat-number">22</div>
+        <div class="stat-label">Drivers Tracked per Race</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-number">44</div>
+        <div class="stat-label">Documented Mistakes in CLAUDE.md</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🔁</div>
+        <div class="stat-number">60s</div>
+        <div class="stat-label">Prediction Update Interval</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🧩</div>
+        <div class="stat-number">11</div>
+        <div class="stat-label">Features per Driver (7 raw + 4 derived)</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Roadmap -->
+<div class="roadmap">
+  <div class="roadmap-title">What's Next — Feature Roadmap</div>
+  <div class="roadmap-grid">
+    <div class="roadmap-item">
+      <div class="roadmap-version">v1.1</div>
+      <div class="roadmap-content">
+        <div class="roadmap-name">Post-Race Accuracy Tracker</div>
+        <div class="roadmap-desc">Lambda fires after <code>race_finished=true</code>. Fetches actual pit laps from OpenF1, compares predictions, sends accuracy report to Slack. Track 88.5% baseline across the season.</div>
+      </div>
+    </div>
+    <div class="roadmap-item">
+      <div class="roadmap-version">v1.2</div>
+      <div class="roadmap-content">
+        <div class="roadmap-name">SSE Real-Time Frontend</div>
+        <div class="roadmap-desc">Replace 30s polling with Server-Sent Events. New route: <code>GET /stream/live</code>. <code>EventSource</code> replaces <code>setInterval</code>. Near-real-time updates when a pit window opens.</div>
+      </div>
+    </div>
+    <div class="roadmap-item">
+      <div class="roadmap-version">v1.3</div>
+      <div class="roadmap-content">
+        <div class="roadmap-name">Automated Model Retraining</div>
+        <div class="roadmap-desc">EventBridge fires post-race → collect full race data → SageMaker Training Job → deploy if accuracy improves. Slack notification: "Model retrained: 88.5% → X%".</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="footer-note">github.com/nshivakumar1/f1-mlops</div>
+
+</body>
+</html>

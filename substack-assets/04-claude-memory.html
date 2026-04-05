@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    width: 1200px;
+    padding: 60px;
+  }
+  .title {
+    text-align: center;
+    color: #ffffff;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #8b949e;
+    font-size: 15px;
+    margin-bottom: 50px;
+  }
+  .red { color: #e10600; }
+  .purple { color: #a371f7; }
+  .cols {
+    display: grid;
+    grid-template-columns: 1fr 60px 1fr;
+    gap: 0;
+    align-items: start;
+    margin-bottom: 40px;
+  }
+  .col-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 16px;
+    text-align: center;
+  }
+  .col-title.bad { color: #e10600; }
+  .col-title.good { color: #3fb950; }
+  .col-divider {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 40px;
+    gap: 10px;
+  }
+  .vs-circle {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #21262d;
+    border: 2px solid #30363d;
+    color: #8b949e;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .bubble {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .bubble.bad { border-left: 3px solid #e10600; }
+  .bubble.good { border-left: 3px solid #3fb950; }
+  .bubble-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .bubble.bad .bubble-label { color: #e10600; }
+  .bubble.good .bubble-label { color: #3fb950; }
+  .bubble-text {
+    color: #c9d1d9;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .bubble-sub {
+    color: #8b949e;
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  .divider {
+    width: 100%;
+    height: 1px;
+    background: #21262d;
+    margin: 10px 0 30px;
+  }
+  .memory-section {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 16px;
+    padding: 30px;
+    position: relative;
+    overflow: hidden;
+  }
+  .memory-section::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #a371f7, #e10600);
+  }
+  .memory-title {
+    color: #ffffff;
+    font-size: 17px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .memory-sub {
+    color: #8b949e;
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+  .memory-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+  .memory-card {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 10px;
+    padding: 16px;
+    text-align: center;
+  }
+  .memory-card-icon { font-size: 22px; margin-bottom: 8px; }
+  .memory-card-title {
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .memory-card-desc {
+    color: #8b949e;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .code-block {
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-family: 'SF Mono', 'Fira Code', 'Fira Mono', monospace;
+    font-size: 12px;
+    color: #8b949e;
+    margin-top: 16px;
+    line-height: 1.6;
+  }
+  .code-comment { color: #484f58; }
+  .code-key { color: #a371f7; }
+  .code-value { color: #3fb950; }
+  .footer-note {
+    text-align: center;
+    color: #484f58;
+    font-size: 12px;
+    margin-top: 30px;
+  }
+</style>
+</head>
+<body>
+
+<div class="title">Building with <span class="purple">Claude Code</span> + <span class="red">Persistent Memory</span></div>
+<div class="subtitle">How CLAUDE.md turned an AI assistant into a system that never forgets context between sessions</div>
+
+<div class="cols">
+
+  <!-- Without memory -->
+  <div>
+    <div class="col-title bad">Without Persistent Memory</div>
+    <div class="bubble bad">
+      <div class="bubble-label">Session 1 — Race weekend setup</div>
+      <div class="bubble-text">Fixed OpenF1 rate limit bug. Explained full architecture. Documented the fix.</div>
+    </div>
+    <div class="bubble bad">
+      <div class="bubble-label">Session 2 — New conversation</div>
+      <div class="bubble-text">Re-explained the architecture from scratch. Re-described the rate limit bug. 20 minutes of context rebuilding before any actual work.</div>
+    </div>
+    <div class="bubble bad">
+      <div class="bubble-label">Session 3 — Race day incident</div>
+      <div class="bubble-text">Lambda broke mid-race. No memory of what was fixed last time. Same mistakes risk being repeated under pressure.</div>
+      <div class="bubble-sub">⚠ Every session starts cold</div>
+    </div>
+  </div>
+
+  <!-- VS divider -->
+  <div class="col-divider">
+    <div class="vs-circle">VS</div>
+  </div>
+
+  <!-- With memory -->
+  <div>
+    <div class="col-title good">With CLAUDE.md Memory</div>
+    <div class="bubble good">
+      <div class="bubble-label">Session 1 — Race weekend setup</div>
+      <div class="bubble-text">Fixed rate limit bug. Written to CLAUDE.md: mistake #15, root cause, exact fix.</div>
+    </div>
+    <div class="bubble good">
+      <div class="bubble-label">Session 2 — Loaded instantly</div>
+      <div class="bubble-text">CLAUDE.md loaded at session start. Architecture, all 44 mistakes, known gotchas — all in context. No re-explaining. Jump straight to the problem.</div>
+    </div>
+    <div class="bubble good">
+      <div class="bubble-label">Session 3 — Japan GP incident</div>
+      <div class="bubble-text">4 bugs fixed in one session: S3 pagination, NR timestamps, rate limits, live positions — without losing context once.</div>
+      <div class="bubble-sub">✓ Every session starts with full history</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="divider"></div>
+
+<div class="memory-section">
+  <div class="memory-title">What CLAUDE.md Stores</div>
+  <div class="memory-sub">A living document that makes Claude a permanent member of the team, not a stateless API call</div>
+
+  <div class="memory-grid">
+    <div class="memory-card">
+      <div class="memory-card-icon">🔴</div>
+      <div class="memory-card-title">Known Mistakes</div>
+      <div class="memory-card-desc">44 entries. Every non-obvious failure with root cause and exact fix. Never repeat the same mistake twice.</div>
+    </div>
+    <div class="memory-card">
+      <div class="memory-card-icon">🏗️</div>
+      <div class="memory-card-title">Architecture Decisions</div>
+      <div class="memory-card-desc">Why S3 not DynamoDB. Why Groq not Gemini. Why the secret is still named gemini-api-key. The reasoning, not just the outcome.</div>
+    </div>
+    <div class="memory-card">
+      <div class="memory-card-icon">⚡</div>
+      <div class="memory-card-title">Race Day Runbook</div>
+      <div class="memory-card-desc">Exact CLI commands for enabling the poller, checking predictions, verifying Lambda timestamps, disabling after race end.</div>
+    </div>
+    <div class="memory-card">
+      <div class="memory-card-icon">🗺️</div>
+      <div class="memory-card-title">Current State</div>
+      <div class="memory-card-desc">What's deployed, what's retired, what's in progress. ELK: retired. Grafana: retired. SageMaker: InService. No guessing.</div>
+    </div>
+  </div>
+
+  <div class="code-block">
+    <span class="code-comment"># CLAUDE.md — excerpt from Known Mistakes</span><br/>
+    <span class="code-key">### 15. OpenF1 Rate Limit</span><br/>
+    <span class="code-comment"># Wrong: Call stints?session_key=X&driver_number=Y for each driver separately</span><br/>
+    <span class="code-comment"># 22 drivers × 3 endpoints = 66 calls > 60 req/min limit → 429 errors</span><br/>
+    <span class="code-value"># Correct: Call stints?session_key=X (no driver filter) → group by driver_number in Python</span><br/>
+    <span class="code-value"># Reduces from 66 API calls to 3 per invocation</span>
+  </div>
+</div>
+
+<div class="footer-note">github.com/nshivakumar1/f1-mlops</div>
+
+</body>
+</html>

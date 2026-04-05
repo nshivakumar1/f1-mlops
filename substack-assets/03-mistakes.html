@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    width: 1200px;
+    padding: 60px;
+  }
+  .title {
+    text-align: center;
+    color: #ffffff;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #8b949e;
+    font-size: 15px;
+    margin-bottom: 50px;
+  }
+  .red { color: #e10600; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+  .card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: #30363d;
+  }
+  .card.critical::before { background: #e10600; }
+  .card.warning::before { background: #f0a500; }
+  .card.info::before { background: #1f6feb; }
+  .card-number {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 10px;
+  }
+  .card.critical .card-number { color: #e10600; }
+  .card.warning .card-number { color: #f0a500; }
+  .card.info .card-number { color: #1f6feb; }
+  .card-title {
+    color: #ffffff;
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    line-height: 1.3;
+  }
+  .card-wrong {
+    background: rgba(225,6,0,0.06);
+    border: 1px solid rgba(225,6,0,0.15);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+  }
+  .card-wrong-label {
+    color: #e10600;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+  }
+  .card-wrong-text {
+    color: #8b949e;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .card-fix {
+    background: rgba(35,134,54,0.06);
+    border: 1px solid rgba(35,134,54,0.2);
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .card-fix-label {
+    color: #3fb950;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 3px;
+  }
+  .card-fix-text {
+    color: #8b949e;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .divider {
+    width: 100%;
+    height: 1px;
+    background: #21262d;
+    margin: 10px 0 30px;
+  }
+  .bottom-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 30px;
+  }
+  .counter {
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .counter-num {
+    color: #e10600;
+    font-size: 64px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -3px;
+  }
+  .counter-label {
+    color: #8b949e;
+    font-size: 13px;
+    margin-top: 6px;
+  }
+  .lesson-box {
+    flex: 1;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 24px;
+  }
+  .lesson-title {
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .lesson-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .lesson-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #e10600;
+    margin-top: 6px;
+    flex-shrink: 0;
+  }
+  .lesson-text {
+    color: #8b949e;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .lesson-text strong { color: #c9d1d9; }
+  .footer-note {
+    text-align: center;
+    color: #484f58;
+    font-size: 12px;
+    margin-top: 30px;
+  }
+</style>
+</head>
+<body>
+
+<div class="title">44 Mistakes. <span class="red">Every One Documented.</span></div>
+<div class="subtitle">The failures that made this system production-ready — and what I'd tell myself on day one</div>
+
+<div class="grid">
+
+  <div class="card critical">
+    <div class="card-number">🔴 Security</div>
+    <div class="card-title">Live API Key Committed to Git</div>
+    <div class="card-wrong">
+      <div class="card-wrong-label">What happened</div>
+      <div class="card-wrong-text">A New Relic license key was inlined in a CLI command saved to <code>.claude/settings.json</code> and committed. GitGuardian flagged it in minutes.</div>
+    </div>
+    <div class="card-fix">
+      <div class="card-fix-label">Fix</div>
+      <div class="card-fix-text">Rotated key immediately. Rewrote git history with <code>--amend</code> + force push. Added pattern to <code>.gitignore</code>.</div>
+    </div>
+  </div>
+
+  <div class="card warning">
+    <div class="card-number">🟡 AWS CLI</div>
+    <div class="card-title">Updating One Env Var Wipes All Others</div>
+    <div class="card-wrong">
+      <div class="card-wrong-label">What happened</div>
+      <div class="card-wrong-text"><code>update-function-configuration --environment Variables={KEY=val}</code> replaces the entire env map. SageMaker endpoint, S3 bucket, Sentry DSN — all gone mid-race.</div>
+    </div>
+    <div class="card-fix">
+      <div class="card-fix-label">Fix</div>
+      <div class="card-fix-text">Always read current env vars first, merge, then write back. Or use EventBridge target Input JSON for race-day overrides.</div>
+    </div>
+  </div>
+
+  <div class="card info">
+    <div class="card-number">🔵 API Design</div>
+    <div class="card-title">66 API Calls Per Cycle Hit Rate Limits</div>
+    <div class="card-wrong">
+      <div class="card-wrong-label">What happened</div>
+      <div class="card-wrong-text">Called OpenF1 once per driver per endpoint: 22 drivers × 3 endpoints = 66 requests. OpenF1 enforces 60 req/min. Every invocation failed.</div>
+    </div>
+    <div class="card-fix">
+      <div class="card-fix-label">Fix</div>
+      <div class="card-fix-text">Fetch all drivers in one call, group by <code>driver_number</code> in Python. 66 calls → 3 calls per invocation.</div>
+    </div>
+  </div>
+
+  <div class="card warning">
+    <div class="card-number">🟡 Terraform</div>
+    <div class="card-title">templatefile() Breaks on %{ in Scripts</div>
+    <div class="card-wrong">
+      <div class="card-wrong-label">What happened</div>
+      <div class="card-wrong-text">Elasticsearch index patterns like <code>%{+YYYY.MM.dd}</code> and Logstash grok patterns like <code>%{DATA:field}</code> — Terraform treats <code>%{</code> as a template directive.</div>
+    </div>
+    <div class="card-fix">
+      <div class="card-fix-label">Fix</div>
+      <div class="card-fix-text">Escape with <code>%%{</code> in every <code>.tpl</code> file. Terraform outputs a literal <code>%{</code> at runtime. Every single one.</div>
+    </div>
+  </div>
+
+  <div class="card info">
+    <div class="card-number">🔵 OpenF1</div>
+    <div class="card-title">Latest Session Was Abu Dhabi in March</div>
+    <div class="card-wrong">
+      <div class="card-wrong-label">What happened</div>
+      <div class="card-wrong-text">OpenF1 pre-populates the full season calendar. <code>sessions[-1]</code> picked the last entry chronologically — Abu Dhabi in December — during the Australian GP.</div>
+    </div>
+    <div class="card-fix">
+      <div class="card-fix-label">Fix</div>
+      <div class="card-fix-text">Filter to <code>date_start &lt;= datetime.utcnow()</code> before picking the last session. "Latest in dataset" ≠ "latest relative to now".</div>
+    </div>
+  </div>
+
+  <div class="card critical">
+    <div class="card-number">🔴 CI/CD</div>
+    <div class="card-title">Terraform Rezips Lambda Without Dependencies</div>
+    <div class="card-wrong">
+      <div class="card-wrong-label">What happened</div>
+      <div class="card-wrong-text"><code>archive_file</code> re-runs during <code>terraform apply</code> in the deploy job — no pip packages installed. Enrichment Lambda became a 9KB source-only ZIP. <code>No module named 'groq'</code>.</div>
+    </div>
+    <div class="card-fix">
+      <div class="card-fix-label">Fix</div>
+      <div class="card-fix-text">Build manylinux ZIPs in plan job, pass as artifacts, redeploy from pre-built ZIPs after <code>terraform apply</code>.</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="divider"></div>
+
+<div class="bottom-row">
+  <div class="counter">
+    <div class="counter-num">44</div>
+    <div class="counter-label">Documented<br/>Mistakes</div>
+  </div>
+  <div class="lesson-box">
+    <div class="lesson-title">The Real Lesson</div>
+    <div class="lesson-item">
+      <div class="lesson-dot"></div>
+      <div class="lesson-text"><strong>Documentation is the product.</strong> The 44-entry mistake log outlasted every sprint plan and architecture diagram I drew.</div>
+    </div>
+    <div class="lesson-item">
+      <div class="lesson-dot"></div>
+      <div class="lesson-text"><strong>Break in production, fix in production.</strong> Race-day pressure forces decisions that tutorials never simulate. That's where the real learning happens.</div>
+    </div>
+    <div class="lesson-item">
+      <div class="lesson-dot"></div>
+      <div class="lesson-text"><strong>Errors that are caught silently are the worst kind.</strong> <code>wget -q</code>, swallowed exceptions, missing <code>capture_exception()</code> calls — silence kills faster than noise.</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer-note">github.com/nshivakumar1/f1-mlops</div>
+
+</body>
+</html>

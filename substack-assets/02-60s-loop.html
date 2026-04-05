@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    width: 1200px;
+    padding: 60px;
+  }
+  .title {
+    text-align: center;
+    color: #ffffff;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #8b949e;
+    font-size: 15px;
+    margin-bottom: 60px;
+  }
+  .red { color: #e10600; }
+  .steps {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0;
+    position: relative;
+  }
+  .step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    max-width: 200px;
+    position: relative;
+  }
+  .step-number {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #e10600;
+    color: white;
+    font-size: 20px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
+  }
+  .step-number.dim {
+    background: #21262d;
+    border: 2px solid #30363d;
+    color: #8b949e;
+  }
+  .connector {
+    flex: 1;
+    height: 2px;
+    background: linear-gradient(90deg, #e10600, #30363d);
+    margin-top: 25px;
+    position: relative;
+  }
+  .connector::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: -5px;
+    border: 6px solid transparent;
+    border-left-color: #30363d;
+  }
+  .step-card {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 16px;
+    margin-top: 20px;
+    text-align: center;
+    width: 100%;
+  }
+  .step-card.active {
+    border-color: #e10600;
+    box-shadow: 0 0 20px rgba(225,6,0,0.1);
+  }
+  .step-icon { font-size: 24px; margin-bottom: 8px; }
+  .step-title {
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .step-desc {
+    color: #8b949e;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .step-tag {
+    display: inline-block;
+    background: rgba(225,6,0,0.1);
+    color: #e10600;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 20px;
+    margin-top: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .divider {
+    width: 100%;
+    height: 1px;
+    background: #21262d;
+    margin: 50px 0 30px;
+  }
+  .footer-row {
+    display: flex;
+    justify-content: center;
+    gap: 50px;
+  }
+  .footer-item {
+    text-align: center;
+  }
+  .footer-num {
+    color: #e10600;
+    font-size: 28px;
+    font-weight: 800;
+  }
+  .footer-label {
+    color: #8b949e;
+    font-size: 12px;
+    margin-top: 4px;
+  }
+  .footer-note {
+    text-align: center;
+    color: #484f58;
+    font-size: 12px;
+    margin-top: 30px;
+  }
+</style>
+</head>
+<body>
+
+<div class="title">What Happens Every <span class="red">60 Seconds</span> During a Race</div>
+<div class="subtitle">The full prediction cycle from telemetry to frontend, automated end-to-end</div>
+
+<div class="steps">
+
+  <div class="step">
+    <div class="step-number">1</div>
+    <div class="step-card active">
+      <div class="step-icon">📡</div>
+      <div class="step-title">Fetch Telemetry</div>
+      <div class="step-desc">Pull stints, laps, intervals, weather, race control, pit events from OpenF1 — 3 batched calls for all 22 drivers</div>
+      <div class="step-tag">OpenF1 API</div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step">
+    <div class="step-number">2</div>
+    <div class="step-card active">
+      <div class="step-icon">⚙️</div>
+      <div class="step-title">Engineer Features</div>
+      <div class="step-desc">Build 11 features per driver: 7 raw + 4 derived (tyre_age², heat degradation, wet stint, sector delta)</div>
+      <div class="step-tag">Lambda</div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step">
+    <div class="step-number">3</div>
+    <div class="step-card active">
+      <div class="step-icon">🧠</div>
+      <div class="step-title">Score Model</div>
+      <div class="step-desc">XGBoost on SageMaker Serverless returns pitstop probability per driver. Win probability computed inline.</div>
+      <div class="step-tag">SageMaker</div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step">
+    <div class="step-number">4</div>
+    <div class="step-card active">
+      <div class="step-icon">🤖</div>
+      <div class="step-title">Generate Commentary</div>
+      <div class="step-desc">Groq Llama 3.3 70B writes AI race commentary per driver based on predictions and race state</div>
+      <div class="step-tag">Groq LLM</div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step">
+    <div class="step-number">5</div>
+    <div class="step-card active">
+      <div class="step-icon">📤</div>
+      <div class="step-title">Publish Results</div>
+      <div class="step-desc">Write JSON to S3, stream events to New Relic, frontend polls and updates driver cards in real time</div>
+      <div class="step-tag">S3 · NR · Vercel</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="divider"></div>
+
+<div class="footer-row">
+  <div class="footer-item">
+    <div class="footer-num">3</div>
+    <div class="footer-label">API Calls Total<br/>(down from 66)</div>
+  </div>
+  <div class="footer-item">
+    <div class="footer-num">22</div>
+    <div class="footer-label">Drivers Scored<br/>Per Cycle</div>
+  </div>
+  <div class="footer-item">
+    <div class="footer-num">11</div>
+    <div class="footer-label">Features<br/>Per Driver</div>
+  </div>
+  <div class="footer-item">
+    <div class="footer-num">~800ms</div>
+    <div class="footer-label">SageMaker<br/>Cold Start</div>
+  </div>
+  <div class="footer-item">
+    <div class="footer-num">$0.47</div>
+    <div class="footer-label">Total Cost<br/>Per Race Weekend</div>
+  </div>
+</div>
+
+<div class="footer-note">github.com/nshivakumar1/f1-mlops</div>
+
+</body>
+</html>
