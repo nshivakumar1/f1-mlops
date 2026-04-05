@@ -1,0 +1,204 @@
+{
+  "name": "F1 MLOps — Live Race Dashboard",
+  "description": "Real-time pitstop predictions, win probabilities, and race strategy insights",
+  "permissions": "PUBLIC_READ_WRITE",
+  "pages": [
+    {
+      "name": "Live Race",
+      "description": null,
+      "widgets": [
+        {
+          "title": "Current Lap",
+          "layout": { "column": 1, "row": 1, "width": 2, "height": 3 },
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT max(lapNumber) AS Lap FROM F1PitstopPrediction SINCE 10 minutes ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Safety Car Active",
+          "layout": { "column": 3, "row": 1, "width": 2, "height": 3 },
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT latest(safetyCarActive) AS SafetyCar FROM F1PitstopPrediction SINCE 10 minutes ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Drivers Tracked",
+          "layout": { "column": 5, "row": 1, "width": 2, "height": 3 },
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT uniqueCount(driverNumber) AS Drivers FROM F1PitstopPrediction SINCE 10 minutes ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Session Key",
+          "layout": { "column": 7, "row": 1, "width": 6, "height": 3 },
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT latest(sessionKey) AS SessionKey FROM F1PitstopPrediction SINCE 10 minutes ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "AI Strategy Commentary",
+          "layout": { "column": 1, "row": 4, "width": 12, "height": 3 },
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT latest(aiCommentary) AS Commentary FROM F1PitstopPrediction WHERE aiCommentary != '' SINCE 30 minutes ago"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Pitstop Probability — All Drivers",
+          "layout": { "column": 1, "row": 7, "width": 6, "height": 4 },
+          "visualization": { "id": "viz.bar" },
+          "rawConfiguration": {
+            "facet": { "showOtherSeries": false },
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT latest(pitstopProbability) * 100 AS PitProbabilityPct FROM F1PitstopPrediction FACET driverName SINCE 30 minutes ago LIMIT 22"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Win Probability — All Drivers",
+          "layout": { "column": 7, "row": 7, "width": 6, "height": 4 },
+          "visualization": { "id": "viz.bar" },
+          "rawConfiguration": {
+            "facet": { "showOtherSeries": false },
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT latest(winProbability) * 100 AS WinProbabilityPct FROM F1PitstopPrediction FACET driverName SINCE 30 minutes ago LIMIT 22"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Full Driver Standings",
+          "layout": { "column": 1, "row": 11, "width": 12, "height": 5 },
+          "visualization": { "id": "viz.table" },
+          "rawConfiguration": {
+            "facet": { "showOtherSeries": false },
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT latest(driverName) AS Driver, latest(team) AS Team, latest(tyreCompound) AS Tyre, latest(tyreAge) AS TyreAge, latest(pitsCompleted) AS Stops, latest(lastPitDuration) AS LastStop, latest(pitstopProbability) * 100 AS PitPct, latest(winProbability) * 100 AS WinPct, latest(lapNumber) AS Lap, latest(speed) AS Speed, latest(drsActive) AS DRS FROM F1PitstopPrediction FACET driverNumber SINCE 30 minutes ago LIMIT 22"
+              }
+            ]
+          }
+        },
+        {
+          "title": "High Pit Probability Alerts",
+          "layout": { "column": 1, "row": 16, "width": 6, "height": 4 },
+          "visualization": { "id": "viz.table" },
+          "rawConfiguration": {
+            "facet": { "showOtherSeries": false },
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT latest(driverName) AS Driver, latest(team) AS Team, latest(pitstopProbability) * 100 AS PitPct, latest(tyreCompound) AS Tyre, latest(tyreAge) AS TyreAge FROM F1PitstopPrediction WHERE pitstopProbability > 0.7 FACET driverNumber SINCE 30 minutes ago LIMIT 22"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Speed Comparison",
+          "layout": { "column": 7, "row": 16, "width": 6, "height": 4 },
+          "visualization": { "id": "viz.bar" },
+          "rawConfiguration": {
+            "facet": { "showOtherSeries": false },
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT latest(speed) AS SpeedKmh FROM F1PitstopPrediction FACET driverName SINCE 10 minutes ago LIMIT 22"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Tyre Age per Driver",
+          "layout": { "column": 1, "row": 20, "width": 6, "height": 4 },
+          "visualization": { "id": "viz.bar" },
+          "rawConfiguration": {
+            "facet": { "showOtherSeries": false },
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT latest(tyreAge) AS TyreAgeLaps FROM F1PitstopPrediction FACET driverName SINCE 30 minutes ago LIMIT 22"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Pit Stop Count per Driver",
+          "layout": { "column": 7, "row": 20, "width": 6, "height": 4 },
+          "visualization": { "id": "viz.bar" },
+          "rawConfiguration": {
+            "facet": { "showOtherSeries": false },
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT latest(pitsCompleted) AS PitStops FROM F1PitstopPrediction FACET driverName SINCE 30 minutes ago LIMIT 22"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Pitstop Probability Over Time",
+          "layout": { "column": 1, "row": 24, "width": 12, "height": 4 },
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": {
+            "facet": { "showOtherSeries": false },
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT average(pitstopProbability) * 100 AS PitProbabilityPct FROM F1PitstopPrediction FACET driverName SINCE 2 hours ago TIMESERIES 1 minute LIMIT 10"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Win Probability Over Time",
+          "layout": { "column": 1, "row": 28, "width": 12, "height": 4 },
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": {
+            "facet": { "showOtherSeries": false },
+            "nrqlQueries": [
+              {
+                "accountIds": [7841720],
+                "query": "SELECT average(winProbability) * 100 AS WinProbabilityPct FROM F1PitstopPrediction FACET driverName SINCE 2 hours ago TIMESERIES 1 minute LIMIT 10"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

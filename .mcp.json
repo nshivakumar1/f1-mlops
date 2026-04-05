@@ -9,6 +9,18 @@
       "env": {
         "POSTGRES_CONNECTION_STRING": "postgresql://user:password@localhost:5432/dbname"
       }
+    },
+    "sentry": {
+      "type": "http",
+      "url": "https://mcp.sentry.dev/mcp"
+    },
+    "code-review-graph": {
+      "command": "uvx",
+      "args": [
+        "code-review-graph",
+        "serve"
+      ],
+      "type": "stdio"
     }
   }
 }

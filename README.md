@@ -309,6 +309,44 @@ aws events disable-rule --name f1-mlops-live-poller --region us-east-1
 
 </details>
 
+<details>
+<summary>🧠 Code Graph — Benchmark Results</summary>
+
+This repo uses [`code-review-graph`](https://github.com/agentic-labs/code-review-graph) to build a structural knowledge graph of the codebase, enabling impact analysis, smarter code review, and token-efficient context for AI-assisted development.
+
+Benchmarks were run across 30 commits on 6 open-source repos (Express, FastAPI, Flask, Gin, httpx, Next.js).
+
+### Token Efficiency
+
+Graph-mode reduces context tokens vs. naively sending full file diffs:
+
+| Repo | Commit Description | Naive Tokens | Graph Tokens | Reduction |
+| :---- | :----------------- | -----------: | -----------: | :-------: |
+| gin | feat: PDF renderer + tests | 45,453 | 1,862 | **24× fewer** |
+| flask | all teardown callbacks called despite errors | 75,757 | 6,143 | **12× fewer** |
+| gin | fix: panic in tree path rec | 15,065 | 859 | **18× fewer** |
+| fastapi | Fix typo in OAuth2 docstrings | 6,044 | 612 | **10× fewer** |
+| httpx | Expose FunctionAuth in `__all__` | 16,841 | 1,796 | **9× fewer** |
+| nextjs | feat: multi-platform MCP install | 12,088 | 1,481 | **8× fewer** |
+
+### Impact Accuracy
+
+The graph predicted which files would be affected by each change — **100% recall across all 30 benchmarks** (every actually-changed file was in the predicted set).
+
+### Build Performance
+
+| Repo | Files | Nodes | Edges | Build Speed |
+| :---- | ----: | ----: | ----: | ----------: |
+| fastapi | 1,125 | 6,294 | 27,157 | 30,086 nodes/s |
+| express | 141 | 1,912 | 17,556 | 10,980 nodes/s |
+| nextjs | 116 | 1,642 | 10,397 | 10,966 nodes/s |
+| httpx | 60 | 1,253 | 7,896 | 8,365 nodes/s |
+| flask | 83 | 1,446 | 7,974 | 9,064 nodes/s |
+
+This project's graph: **51 files · 297 nodes · 3,208 edges · 47 flows detected**
+
+</details>
+
 ---
 
 <div align="center">

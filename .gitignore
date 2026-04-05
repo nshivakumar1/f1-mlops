@@ -28,7 +28,15 @@ terraform/modules/lambda/*.zip
 # IDE
 .vscode/
 .idea/
+.cursor/
+.cursorrules
+.windsurfrules
+.opencode.json
 *.swp
+
+# code-review-graph (generated artifacts)
+evaluate/
+.code-review-graph/
 
 # Test reports
 reports/

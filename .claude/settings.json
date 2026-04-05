@@ -1,4 +1,73 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(grep -o '/[0-9]*$')",
+      "Bash(for f in rest_handler prewarm slack_notifier prerace_check)",
+      "Bash(do)",
+      "Bash(echo \"=== $f ===\")",
+      "Read(//Users/nakulshivakumar/Desktop/F1 MLOps/lambda/$f/**)",
+      "Bash(gh run list --limit 1 --json status,conclusion,name --jq '.[0] | \"\"\\\\\\(.status\\) \\\\\\(.conclusion // \"\"—\"\"\\) \\\\\\(.name\\)\"\"')",
+      "Bash(cp final2.zip final3.zip)",
+      "Bash(zip -q -u final3.zip handler.py)",
+      "Bash(__NEW_LINE_e0844b203d7dbad2__ aws lambda update-function-code --function-name f1-mlops-enrichment --zip-file fileb:///tmp/nr_patch/final3.zip --region us-east-1 --query 'LastModified' --output text)",
+      "Bash(aws logs get-log-events --log-group-name /aws/lambda/f1-mlops-enrichment --log-stream-name \"2026/03/29/[$LATEST]dd7510e632354a8f96c524ca07ac58b2\" --limit 80 --region us-east-1 --query 'events[*].message' --output text)",
+      "Bash(cp final3.zip final4.zip)",
+      "Bash(zip -q -u final4.zip handler.py)",
+      "Bash(__NEW_LINE_b73cd47f9730465f__ aws lambda update-function-code --function-name f1-mlops-enrichment --zip-file fileb:///tmp/nr_patch/final4.zip --region us-east-1 --query 'LastModified' --output text)",
+      "Bash(aws logs get-log-events --log-group-name /aws/lambda/f1-mlops-enrichment --log-stream-name \"2026/03/29/[$LATEST]03164d2f57ab434e9b1beb1763051e28\" --limit 60 --region us-east-1 --query 'events[*].message' --output text )",
+      "Bash(curl -sL https://skills.sentry.dev/sentry-python-sdk/SKILL.md)",
+      "Bash(aws events enable-rule --name f1-mlops-live-poller --region us-east-1)",
+      "Bash(python3 -c \":*)",
+      "Bash(curl -s https://xwmgxkj0r4.execute-api.us-east-1.amazonaws.com/v1/sessions/latest)",
+      "Bash(BUCKET=\"f1-mlops-data-297997106614\")",
+      "Bash(aws s3api list-objects-v2 --bucket $BUCKET --prefix \"logs/inference/\" --delimiter \"/\" --region us-east-1 --query 'CommonPrefixes[].Prefix' --output text)",
+      "Bash(aws s3api list-objects-v2 --bucket $BUCKET --prefix \"logs/inference/\" --region us-east-1 --query '{KeyCount: KeyCount, IsTruncated: IsTruncated}' --output json)",
+      "Bash(cp \"/Users/nakulshivakumar/Desktop/F1 MLOps/lambda/rest_handler/handler.py\" handler.py)",
+      "Bash(zip -r /tmp/rest_patched2.zip . -q)",
+      "Bash(__NEW_LINE_c0085f0b2d34b0c3__ aws lambda update-function-code --function-name f1-mlops-rest-handler --zip-file fileb:///tmp/rest_patched2.zip --region us-east-1 --query '{State: State, LastModified: LastModified}' --output json)",
+      "Bash(__NEW_LINE_c0085f0b2d34b0c3__ aws lambda wait function-updated --function-name f1-mlops-rest-handler --region us-east-1)",
+      "Bash(aws logs tail /aws/lambda/f1-mlops-enrichment --since 3m --region us-east-1)",
+      "Bash(cp \"/Users/nakulshivakumar/Desktop/F1 MLOps/lambda/enrichment/handler.py\" handler.py)",
+      "Bash(cp \"/Users/nakulshivakumar/Desktop/F1 MLOps/lambda/enrichment/openf1_client.py\" openf1_client.py)",
+      "Bash(zip -r /tmp/enrichment_final.zip . -q)",
+      "Bash(__NEW_LINE_8cc6400b38ec5e91__ BUCKET=\"f1-mlops-data-297997106614\")",
+      "Bash(aws s3 cp /tmp/enrichment_final.zip s3://$BUCKET/lambda-deployments/enrichment_final.zip --region us-east-1 --no-progress)",
+      "Bash(aws lambda update-function-code --function-name f1-mlops-enrichment --s3-bucket $BUCKET --s3-key lambda-deployments/enrichment_final.zip --region us-east-1 --query 'State' --output text)",
+      "Bash(aws events disable-rule --name f1-mlops-live-poller --region us-east-1)",
+      "Bash(aws lambda update-function-configuration --function-name f1-mlops-enrichment --region us-east-1 --description \"nr-key-fix-7841720\")",
+      "Bash(gh run view 23705898824 --log-failed)",
+      "Bash(pip install groq openai sentry-sdk -q)",
+      "Bash(pytest tests/unit/test_openf1_client.py -v --tb=short)",
+      "Bash(pytest tests/unit/ -v --tb=short)",
+      "Bash(aws lambda get-function-configuration --function-name f1-mlops-enrichment --region us-east-1 --query 'Environment.Variables' --output json)",
+      "Bash(aws lambda update-function-configuration --function-name f1-mlops-enrichment --region us-east-1 --environment \"Variables={:*)",
+      "Bash(zip -r enrichment_nr_fix.zip . -x \"*.pyc\" -x \"__pycache__/*\" -q)",
+      "Bash(pip3 install --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 --only-binary=:all: -q groq sentry-sdk -t .)",
+      "Bash(aws s3 cp /tmp/nr_fix_deploy/enrichment_nr_fix.zip s3://f1-mlops-artifacts-297997106614/lambda-deployments/enrichment.zip --region us-east-1)",
+      "Bash(aws lambda update-function-code --function-name f1-mlops-enrichment --region us-east-1 --s3-bucket f1-mlops-artifacts-297997106614 --s3-key lambda-deployments/enrichment.zip --query 'LastModified' --output text)",
+      "Bash(pytest tests/unit/test_openf1_client.py tests/unit/test_pitstop_model.py -v --tb=short)",
+      "Bash(zip -u enrichment_nr_fix.zip groq_client.py handler.py -q)",
+      "Bash(aws s3:*)",
+      "Bash(aws lambda:*)",
+      "Bash(rm -rf sentry_deploy)",
+      "Bash(mkdir sentry_deploy)",
+      "Bash(cp -r \"/Users/nakulshivakumar/Desktop/F1 MLOps/lambda/enrichment/.\" sentry_deploy/enrichment/)",
+      "Bash(cp -r \"/Users/nakulshivakumar/Desktop/F1 MLOps/lambda/rest_handler/.\" sentry_deploy/rest_handler/)",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(BUCKET=\"f1-mlops-dev-data\")",
+      "Bash(gh secret:*)",
+      "Bash(gh repo:*)",
+      "mcp__plugin_sentry_sentry__find_projects",
+      "mcp__plugin_sentry_sentry__search_issues",
+      "mcp__plugin_sentry_sentry__search_events",
+      "mcp__plugin_sentry_sentry__update_project",
+      "mcp__plugin_sentry_sentry__update_issue",
+      "Bash(bash /Users/nakulshivakumar/.claude/plugins/marketplaces/nyldn-plugins/scripts/install-deps.sh check)",
+      "Bash(/Users/nakulshivakumar/.claude/plugins/marketplaces/nyldn-plugins/scripts/orchestrate.sh detect-providers:*)"
+    ],
+    "additionalDirectories": []
+  },
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,
@@ -11,5 +80,26 @@
     "sentry@claude-plugins-official": true,
     "coderabbit@claude-plugins-official": true,
     "code-simplifier@claude-plugins-official": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|Bash",
+        "command": "code-review-graph update --quiet",
+        "timeout": 5000
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "code-review-graph status --json",
+        "timeout": 3000
+      }
+    ],
+    "PreCommit": [
+      {
+        "command": "code-review-graph detect-changes --brief",
+        "timeout": 10000
+      }
+    ]
   }
 }
