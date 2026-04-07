@@ -26,7 +26,6 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 import lightgbm as lgb
-from catboost import CatBoostClassifier
 
 # ── Feature columns ────────────────────────────────────────────────────────────
 RAW_FEATURES = [
@@ -174,33 +173,12 @@ def train_lightgbm(X_train, y_train, X_val, y_val, scale_pos_weight, args, featu
     return booster, auc
 
 
-def train_catboost(X_train, y_train, X_val, y_val, scale_pos_weight, args):
-    print("\n--- Training CatBoost ---")
-    model = CatBoostClassifier(
-        iterations=args.n_estimators,
-        depth=args.max_depth,
-        learning_rate=args.learning_rate,
-        scale_pos_weight=scale_pos_weight,
-        eval_metric="AUC",
-        random_seed=42,
-        verbose=50,
-        early_stopping_rounds=50,
-    )
-    model.fit(X_train, y_train, eval_set=(X_val, y_val))
-    auc = roc_auc_score(y_val, model.predict_proba(X_val)[:, 1])
-    print(f"CatBoost val AUC: {auc:.4f}")
-    return model, auc
-
-
 # ── Stacking ensemble ──────────────────────────────────────────────────────────
-def build_stacking_meta_features(
-    xgb_model, lgb_model, cat_model, X, is_lgb_booster=True
-):
-    """Return [n_samples, 3] array of base model probabilities."""
+def build_stacking_meta_features(xgb_model, lgb_model, X):
+    """Return [n_samples, 2] array of base model probabilities."""
     xgb_proba = xgb_model.predict_proba(X)[:, 1]
-    lgb_proba = lgb_model.predict(X) if is_lgb_booster else lgb_model.predict_proba(X)[:, 1]
-    cat_proba = cat_model.predict_proba(X)[:, 1]
-    return np.column_stack([xgb_proba, lgb_proba, cat_proba])
+    lgb_proba = lgb_model.predict(X)
+    return np.column_stack([xgb_proba, lgb_proba])
 
 
 def train_meta_learner(meta_X_train, y_train, meta_X_val, y_val):
@@ -245,25 +223,59 @@ def train(args):
     scale_pos_weight = (y_train == 0).sum() / max((y_train == 1).sum(), 1)
     print(f"Scale pos weight: {scale_pos_weight:.1f}")
 
-    # Train base models
+    # ── Out-of-fold stacking (prevents meta-learner overfitting) ──────────────
+    # Generate OOF predictions on X_train using 5-fold CV, then retrain each
+    # base model on the full X_train for the final ensemble.
+    print("\n--- Generating out-of-fold meta-features (5-fold CV) ---")
+    kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    oof_meta = np.zeros((len(X_train), 3))  # [n_train, 3] — one col per base model
+
+    oof_meta = np.zeros((len(X_train), 2))  # [n_train, 2] — XGB + LGB
+
+    for fold, (tr_idx, oof_idx) in enumerate(kf.split(X_train, y_train)):
+        X_tr, X_oof = X_train[tr_idx], X_train[oof_idx]
+        y_tr, y_oof = y_train[tr_idx], y_train[oof_idx]
+        spw = (y_tr == 0).sum() / max((y_tr == 1).sum(), 1)
+
+        # XGBoost fold
+        xgb_fold = xgb.XGBClassifier(
+            n_estimators=args.n_estimators, max_depth=args.max_depth,
+            learning_rate=args.learning_rate, subsample=0.8, colsample_bytree=0.8,
+            scale_pos_weight=spw, eval_metric="auc", random_state=42, tree_method="hist",
+        )
+        xgb_fold.fit(X_tr, y_tr, eval_set=[(X_oof, y_oof)], verbose=False)
+        oof_meta[oof_idx, 0] = xgb_fold.predict_proba(X_oof)[:, 1]
+
+        # LightGBM fold
+        lgb_tr = lgb.Dataset(X_tr, label=y_tr)
+        lgb_oof = lgb.Dataset(X_oof, label=y_oof, reference=lgb_tr)
+        lgb_fold = lgb.train(
+            {"objective": "binary", "metric": "auc", "learning_rate": args.learning_rate,
+             "num_leaves": 63, "max_depth": args.max_depth, "subsample": 0.8,
+             "colsample_bytree": 0.8, "scale_pos_weight": spw, "verbosity": -1},
+            lgb_tr, num_boost_round=args.n_estimators, valid_sets=[lgb_oof],
+            callbacks=[lgb.early_stopping(50, verbose=False), lgb.log_evaluation(-1)],
+        )
+        oof_meta[oof_idx, 1] = lgb_fold.predict(X_oof)
+
+        print(f"  Fold {fold+1}/5 complete")
+
+    # Train final base models on full X_train
     xgb_model, xgb_auc = train_xgboost(X_train, y_train, X_val, y_val, scale_pos_weight, args)
     lgb_model, lgb_auc = train_lightgbm(X_train, y_train, X_val, y_val, scale_pos_weight, args, ALL_FEATURES)
-    cat_model, cat_auc = train_catboost(X_train, y_train, X_val, y_val, scale_pos_weight, args)
 
-    # Build meta features from base model predictions
-    meta_X_train = build_stacking_meta_features(xgb_model, lgb_model, cat_model, X_train)
-    meta_X_val = build_stacking_meta_features(xgb_model, lgb_model, cat_model, X_val)
+    # Build meta features for val set from final base models
+    meta_X_val = build_stacking_meta_features(xgb_model, lgb_model, X_val)
 
-    # Train meta-learner
+    # Train meta-learner on OOF predictions (not on training predictions)
     meta_model, meta_scaler, ensemble_auc, ensemble_acc = train_meta_learner(
-        meta_X_train, y_train, meta_X_val, y_val
+        oof_meta, y_train, meta_X_val, y_val
     )
 
     # Print comparison
     print("\n=== Model Comparison ===")
     print(f"  XGBoost AUC:  {xgb_auc:.4f}")
     print(f"  LightGBM AUC: {lgb_auc:.4f}")
-    print(f"  CatBoost AUC: {cat_auc:.4f}")
     print(f"  Ensemble AUC: {ensemble_auc:.4f}  ← deployed")
     print(f"  Ensemble Acc: {ensemble_acc:.4f}")
 
@@ -275,7 +287,6 @@ def train(args):
         "approved": ensemble_auc >= AUC_THRESHOLD,
         "xgb_auc": xgb_auc,
         "lgb_auc": lgb_auc,
-        "cat_auc": cat_auc,
         "n_train": len(X_train),
         "n_val": len(X_val),
         "positive_rate": float(y.mean()),
@@ -294,9 +305,18 @@ def train(args):
 
     xgb_model.save_model(os.path.join(model_dir, "xgboost_pitstop.json"))
     lgb_model.save_model(os.path.join(model_dir, "lightgbm_pitstop.txt"))
-    joblib.dump(cat_model, os.path.join(model_dir, "catboost_pitstop.pkl"))
-    joblib.dump(meta_model, os.path.join(model_dir, "meta_learner.pkl"))
-    joblib.dump(meta_scaler, os.path.join(model_dir, "meta_scaler.pkl"))
+    # Save meta-learner as JSON to avoid numpy version mismatch in SageMaker container
+    with open(os.path.join(model_dir, "meta_learner.json"), "w") as f:
+        json.dump({
+            "coef": meta_model.coef_.tolist(),
+            "intercept": meta_model.intercept_.tolist(),
+            "classes": meta_model.classes_.tolist(),
+        }, f)
+    with open(os.path.join(model_dir, "meta_scaler.json"), "w") as f:
+        json.dump({
+            "mean": meta_scaler.mean_.tolist(),
+            "scale": meta_scaler.scale_.tolist(),
+        }, f)
 
     with open(os.path.join(model_dir, "feature_names.json"), "w") as f:
         json.dump(ALL_FEATURES, f, indent=2)
@@ -304,7 +324,7 @@ def train(args):
     with open(os.path.join(model_dir, "model_info.json"), "w") as f:
         json.dump({
             "model_type": "stacking_ensemble",
-            "base_models": ["xgboost", "lightgbm", "catboost"],
+            "base_models": ["xgboost", "lightgbm"],
             "meta_learner": "logistic_regression",
             "n_features": len(ALL_FEATURES),
             "feature_names": ALL_FEATURES,

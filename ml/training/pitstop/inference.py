@@ -1,7 +1,10 @@
 """
 SageMaker Inference Script — Pitstop Stacking Ensemble
-Loads XGBoost + LightGBM + CatBoost base models and Logistic Regression meta-learner.
+Loads XGBoost + LightGBM base models and Logistic Regression meta-learner.
 Packaged at code/inference.py inside model.tar.gz (SageMaker script mode).
+
+Container: sagemaker-xgboost:1.7-1 (XGBoost + sklearn + scipy pre-installed)
+LightGBM bundled at /opt/ml/model/packages (manylinux cp39, --no-deps)
 
 Expected feature order (18 features):
   tyre_age, stint_number, gap_to_leader, air_temperature, track_temperature,
@@ -9,73 +12,88 @@ Expected feature order (18 features):
   abs_sector_delta, deg_rate, gap_trend, rolling_sector_delta_5,
   tyre_stress_index, compound_soft, compound_medium, compound_hard
 """
-import json
+import sys
 import os
+
+# Prepend bundled packages dir before any other imports
+_pkg_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "packages")
+if os.path.isdir(_pkg_dir):
+    sys.path.insert(0, os.path.normpath(_pkg_dir))
+# Also try the model_dir-relative path (SageMaker extracts to /opt/ml/model)
+_pkg_dir2 = "/opt/ml/model/packages"
+if os.path.isdir(_pkg_dir2):
+    sys.path.insert(0, _pkg_dir2)
+
+import json
 import numpy as np
-import joblib
 import xgboost as xgb
 import lightgbm as lgb
 
 _xgb_model = None
 _lgb_model = None
-_cat_model = None
-_meta_model = None
-_meta_scaler = None
+_meta_coef = None       # shape [1, 2]
+_meta_intercept = None  # shape [1]
+_scaler_mean = None     # shape [2]
+_scaler_scale = None    # shape [2]
 _feature_names = None
 
 
+def _sigmoid(x):
+    return 1.0 / (1.0 + np.exp(-x))
+
+
 def model_fn(model_dir: str):
-    """Load all ensemble components from model_dir."""
-    global _xgb_model, _lgb_model, _cat_model, _meta_model, _meta_scaler, _feature_names
+    """Load all ensemble components from model_dir.
+    meta_learner.json and meta_scaler.json are used instead of joblib pkl
+    to avoid numpy version incompatibility between training env and container.
+    """
+    global _xgb_model, _lgb_model, _meta_coef, _meta_intercept
+    global _scaler_mean, _scaler_scale, _feature_names
 
-    # XGBoost
-    xgb_path = os.path.join(model_dir, "xgboost_pitstop.json")
     _xgb_model = xgb.XGBClassifier()
-    _xgb_model.load_model(xgb_path)
+    _xgb_model.load_model(os.path.join(model_dir, "xgboost_pitstop.json"))
 
-    # LightGBM
-    lgb_path = os.path.join(model_dir, "lightgbm_pitstop.txt")
-    _lgb_model = lgb.Booster(model_file=lgb_path)
+    _lgb_model = lgb.Booster(model_file=os.path.join(model_dir, "lightgbm_pitstop.txt"))
 
-    # CatBoost
-    cat_path = os.path.join(model_dir, "catboost_pitstop.pkl")
-    _cat_model = joblib.load(cat_path)
+    with open(os.path.join(model_dir, "meta_learner.json")) as f:
+        meta = json.load(f)
+    _meta_coef = np.array(meta["coef"])          # [[w0, w1]]
+    _meta_intercept = np.array(meta["intercept"]) # [b]
 
-    # Meta-learner + scaler
-    _meta_model = joblib.load(os.path.join(model_dir, "meta_learner.pkl"))
-    _meta_scaler = joblib.load(os.path.join(model_dir, "meta_scaler.pkl"))
+    with open(os.path.join(model_dir, "meta_scaler.json")) as f:
+        scaler = json.load(f)
+    _scaler_mean = np.array(scaler["mean"])
+    _scaler_scale = np.array(scaler["scale"])
 
-    # Feature names
-    fn_path = os.path.join(model_dir, "feature_names.json")
-    with open(fn_path) as f:
+    with open(os.path.join(model_dir, "feature_names.json")) as f:
         _feature_names = json.load(f)
 
-    print(f"Ensemble loaded: {len(_feature_names)} features")
+    print(f"XGB+LGB stacking ensemble loaded: {len(_feature_names)} features")
     return {
         "xgb": _xgb_model,
         "lgb": _lgb_model,
-        "cat": _cat_model,
-        "meta": _meta_model,
-        "scaler": _meta_scaler,
+        "meta_coef": _meta_coef,
+        "meta_intercept": _meta_intercept,
+        "scaler_mean": _scaler_mean,
+        "scaler_scale": _scaler_scale,
     }
 
 
 def input_fn(request_body: str, content_type: str = "application/json"):
-    """Parse incoming request."""
     data = json.loads(request_body)
     instances = data.get("instances", [data.get("features", [])])
     return np.array(instances, dtype=float)
 
 
 def predict_fn(input_data, models):
-    """Run stacking ensemble inference."""
     xgb_proba = models["xgb"].predict_proba(input_data)[:, 1]
     lgb_proba = models["lgb"].predict(input_data)
-    cat_proba = models["cat"].predict_proba(input_data)[:, 1]
 
-    meta_X = np.column_stack([xgb_proba, lgb_proba, cat_proba])
-    meta_X_scaled = models["scaler"].transform(meta_X)
-    ensemble_proba = models["meta"].predict_proba(meta_X_scaled)[:, 1]
+    # Manual StandardScaler + LogisticRegression (no sklearn/pickle dependency)
+    meta_X = np.column_stack([xgb_proba, lgb_proba])
+    meta_X_scaled = (meta_X - models["scaler_mean"]) / models["scaler_scale"]
+    logits = meta_X_scaled @ models["meta_coef"].T + models["meta_intercept"]
+    ensemble_proba = _sigmoid(logits[:, 0])
 
     predictions = []
     for i, p in enumerate(ensemble_proba):
@@ -87,7 +105,6 @@ def predict_fn(input_data, models):
             "base_models": {
                 "xgboost": round(float(xgb_proba[i]), 4),
                 "lightgbm": round(float(lgb_proba[i]), 4),
-                "catboost": round(float(cat_proba[i]), 4),
             },
         })
     return predictions
