@@ -49,18 +49,20 @@ def test_driver_grid_contains_new_teams():
     assert DRIVER_GRID[11]["team"] == "Cadillac"
 
 
-def test_build_feature_vector_returns_11_features():
+def test_build_feature_vector_returns_18_features():
     result = build_feature_vector(1, MOCK_SESSION_DATA)
     assert result is not None
-    assert len(result["features"]) == 11
-    assert len(result["feature_names"]) == 11
+    assert len(result["features"]) == 18
+    assert len(result["feature_names"]) == 18
 
 
 def test_feature_vector_values():
     result = build_feature_vector(1, MOCK_SESSION_DATA)
     f = result["features"]
     tyre_age, stint_number, gap_to_leader, air_temp, track_temp, rainfall, sector_delta, \
-        tyre_age_sq, heat_deg, wet_stint, abs_sector_delta = f
+        tyre_age_sq, heat_deg, wet_stint, abs_sector_delta, \
+        deg_rate, gap_trend, rolling_sector_delta_5, tyre_stress_index, \
+        compound_soft, compound_medium, compound_hard = f
 
     assert tyre_age == 11           # lap_end(12) - lap_start(1)
     assert stint_number == 1
@@ -73,6 +75,15 @@ def test_feature_vector_values():
     assert abs(heat_deg - 44.2 * 11 / 100.0) < 0.01
     assert wet_stint == 0           # rainfall(0) * stint_number(1)
     assert abs_sector_delta == sector_delta  # positive delta
+    # Rolling features — values depend on lap history, just verify they are numeric
+    assert isinstance(deg_rate, (int, float))
+    assert isinstance(gap_trend, (int, float))
+    assert isinstance(rolling_sector_delta_5, (int, float))
+    assert isinstance(tyre_stress_index, (int, float))
+    # Compound one-hot — MEDIUM compound
+    assert compound_soft == 0
+    assert compound_medium == 1
+    assert compound_hard == 0
 
 
 def test_rainfall_flag():
