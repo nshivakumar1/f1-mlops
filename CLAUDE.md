@@ -92,12 +92,16 @@ XGBoost-based F1 pitstop prediction system deployed on AWS. Infrastructure manag
 - **Correct:** Call `stints?session_key=X` (no driver filter) → group by `driver_number` in Python
 - Reduces from 66 API calls to 3 per invocation
 
-### 16. SageMaker Feature Mismatch — Model Expects 11, Not 7
-- The XGBoost model was trained with 11 features (7 raw + 4 derived)
-- Derived features: `tyre_age_sq`, `heat_deg_interaction` (track_temp × tyre_age), `wet_stint` (rainfall × stint_number), `abs_sector_delta`
-- **Wrong:** Send only the 7 raw features → `Feature shape mismatch, expected: 11, got 7` (HTTP 500)
-- **Correct:** Always compute and append all 4 derived features before calling `invoke_endpoint`
+### 16. SageMaker Feature Mismatch — Stacking Ensemble Expects 18 Features
+- The stacking ensemble (XGBoost + LightGBM + CatBoost) is trained with 18 features:
+  - 7 raw: `tyre_age`, `stint_number`, `gap_to_leader`, `air_temperature`, `track_temperature`, `rainfall`, `sector_delta`
+  - 4 derived: `tyre_age_sq`, `heat_deg_interaction`, `wet_stint`, `abs_sector_delta`
+  - 4 rolling: `deg_rate`, `gap_trend`, `rolling_sector_delta_5`, `tyre_stress_index`
+  - 3 compound one-hot: `compound_soft`, `compound_medium`, `compound_hard`
+- **Wrong:** Send only 7 or 11 features → `Feature shape mismatch` (HTTP 500)
+- **Correct:** Always compute all 18 features in `build_feature_vector()` before calling `invoke_endpoint`
 - Feature list in `code/feature_names.json` inside `model.tar.gz` is the source of truth
+- **Note:** Current deployed model is XGBoost-only (11 features). Retrain with `ml/training/pitstop/train.py` to deploy the ensemble
 
 ### 17. API Gateway Routes — Add to Terraform AND Deploy Immediately
 - Adding a route to the Lambda handler is not enough — must also add it to `terraform/modules/api_gateway/main.tf`

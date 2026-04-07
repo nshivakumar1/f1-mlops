@@ -253,21 +253,28 @@ def fetch_all_session_data(session_key: str) -> dict:
 
 def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dict]:
     """
-    Build the 11-feature vector from pre-fetched session data.
+    Build the 18-feature vector from pre-fetched session data.
     Also returns enriched metadata from pit and car_data endpoints.
 
     Features (in order — must match model training):
-      [0]  tyre_age              — laps on current stint
-      [1]  stint_number          — current stint number
-      [2]  gap_to_leader         — seconds behind leader
-      [3]  air_temperature       — °C
-      [4]  track_temperature     — °C
-      [5]  rainfall              — 1 if raining, 0 if dry
-      [6]  sector_delta          — recent sector 1 vs 3-lap avg
-      [7]  tyre_age_sq           — tyre_age²
-      [8]  heat_deg_interaction  — track_temp × tyre_age / 100
-      [9]  wet_stint             — rainfall × stint_number
-      [10] abs_sector_delta      — |sector_delta|
+      [0]  tyre_age                — laps on current stint
+      [1]  stint_number            — current stint number
+      [2]  gap_to_leader           — seconds behind leader
+      [3]  air_temperature         — °C
+      [4]  track_temperature       — °C
+      [5]  rainfall                — 1 if raining, 0 if dry
+      [6]  sector_delta            — recent sector 1 vs 3-lap avg
+      [7]  tyre_age_sq             — tyre_age²
+      [8]  heat_deg_interaction    — track_temp × tyre_age / 100
+      [9]  wet_stint               — rainfall × stint_number
+      [10] abs_sector_delta        — |sector_delta|
+      [11] deg_rate                — sector_delta change lap-over-lap
+      [12] gap_trend               — gap_to_leader change over last 3 laps
+      [13] rolling_sector_delta_5  — 5-lap rolling mean of abs sector delta
+      [14] tyre_stress_index       — tyre_age × rolling_sector_delta_5 / 100
+      [15] compound_soft           — 1 if SOFT tyre
+      [16] compound_medium         — 1 if MEDIUM tyre
+      [17] compound_hard           — 1 if HARD tyre
 
     Extra metadata (not model inputs):
       lap_number        — current race lap
@@ -333,11 +340,64 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
         except (TypeError, ValueError):
             sector_delta = 0.0
 
-    # ── Derived features (required by model — must match training) ────────────
+    # ── Derived features ──────────────────────────────────────────────────────
     tyre_age_sq = tyre_age ** 2
     heat_deg_interaction = track_temperature * tyre_age / 100.0
     wet_stint = rainfall * stint_number
     abs_sector_delta = abs(sector_delta)
+
+    # ── Rolling features (computed from lap history) ──────────────────────────
+    # deg_rate: sector_delta change vs previous lap
+    prev_sector_delta = 0.0
+    if len(laps) >= 2:
+        try:
+            prev_s = laps[-2].get("duration_sector_1") or 0
+            prev_sector_delta = float(prev_s) - (
+                sum(
+                    float(lap.get("duration_sector_1") or 0)
+                    for lap in laps[:-2]
+                    if lap.get("duration_sector_1")
+                ) / max(len([lap for lap in laps[:-2] if lap.get("duration_sector_1")]), 1)
+            )
+        except (TypeError, ValueError):
+            prev_sector_delta = 0.0
+    deg_rate = sector_delta - prev_sector_delta
+
+    # gap_trend: gap_to_leader change over last 3 intervals
+    intervals_all = session_data["intervals"].get(driver_number, [])
+    gap_trend = 0.0
+    if len(intervals_all) >= 4:
+        try:
+            gap_now = float(str(intervals_all[-1].get("gap_to_leader", 0) or 0).replace("+", ""))
+            gap_3ago = float(str(intervals_all[-4].get("gap_to_leader", 0) or 0).replace("+", ""))
+            gap_trend = gap_now - gap_3ago
+        except (ValueError, TypeError):
+            gap_trend = 0.0
+
+    # rolling_sector_delta_5: 5-lap rolling mean of abs sector deltas
+    rolling_sector_delta_5 = 0.0
+    if len(all_laps) >= 2:
+        try:
+            recent_abs_deltas = []
+            recent_5 = all_laps[-6:]  # need 6 to compute 5 diffs
+            for i in range(1, len(recent_5)):
+                s_now = recent_5[i].get("duration_sector_1") or 0
+                s_prev = recent_5[i - 1].get("duration_sector_1") or 0
+                if s_now and s_prev:
+                    recent_abs_deltas.append(abs(float(s_now) - float(s_prev)))
+            if recent_abs_deltas:
+                rolling_sector_delta_5 = sum(recent_abs_deltas) / len(recent_abs_deltas)
+        except (TypeError, ValueError):
+            rolling_sector_delta_5 = 0.0
+
+    # tyre_stress_index: tyre_age × rolling_sector_delta_5 / 100
+    tyre_stress_index = tyre_age * rolling_sector_delta_5 / 100.0
+
+    # ── Tyre compound one-hot ─────────────────────────────────────────────────
+    compound_upper = (current_stint.get("compound") or "UNKNOWN").upper()
+    compound_soft = 1 if compound_upper == "SOFT" else 0
+    compound_medium = 1 if compound_upper == "MEDIUM" else 0
+    compound_hard = 1 if compound_upper == "HARD" else 0
 
     # ── Extra metadata from pit endpoint ─────────────────────────────────────
     # pit records: each entry is one pit stop (lap_number, pit_duration, pit_out_lap)
@@ -387,6 +447,13 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
             heat_deg_interaction,
             wet_stint,
             abs_sector_delta,
+            deg_rate,
+            gap_trend,
+            rolling_sector_delta_5,
+            tyre_stress_index,
+            compound_soft,
+            compound_medium,
+            compound_hard,
         ],
         "feature_names": [
             "tyre_age",
@@ -400,5 +467,12 @@ def build_feature_vector(driver_number: int, session_data: dict) -> Optional[dic
             "heat_deg_interaction",
             "wet_stint",
             "abs_sector_delta",
+            "deg_rate",
+            "gap_trend",
+            "rolling_sector_delta_5",
+            "tyre_stress_index",
+            "compound_soft",
+            "compound_medium",
+            "compound_hard",
         ],
     }

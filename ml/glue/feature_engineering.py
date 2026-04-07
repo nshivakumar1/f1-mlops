@@ -91,6 +91,49 @@ def build_pitstop_features(df):
     )
     df = df.withColumn("pitstop_within_3_laps", F.coalesce(next3_pit, F.lit(0)).cast(IntegerType()))
 
+    # ── Derived features ──────────────────────────────────────────────────────
+    df = df.withColumn("tyre_age_sq", (F.col("tyre_age") ** 2).cast(FloatType()))
+    df = df.withColumn(
+        "heat_deg_interaction",
+        (F.col("track_temperature") * F.col("tyre_age") / 100.0).cast(FloatType()),
+    )
+    df = df.withColumn("wet_stint", (F.col("rainfall") * F.col("stint_number")).cast(FloatType()))
+    df = df.withColumn("abs_sector_delta", F.abs(F.col("sector_delta")).cast(FloatType()))
+
+    # ── Rolling features ──────────────────────────────────────────────────────
+    # deg_rate: lap-over-lap pace loss (sector_delta diff)
+    df = df.withColumn(
+        "deg_rate",
+        (F.col("sector_delta") - F.lag("sector_delta", 1).over(driver_lap_window))
+        .cast(FloatType()),
+    ).fillna({"deg_rate": 0.0})
+
+    # gap_trend: change in gap_to_leader over 3 laps
+    df = df.withColumn(
+        "gap_trend",
+        (F.col("gap_to_leader") - F.lag("gap_to_leader", 3).over(driver_lap_window))
+        .cast(FloatType()),
+    ).fillna({"gap_trend": 0.0})
+
+    # rolling_sector_delta_5: 5-lap rolling mean of abs_sector_delta
+    df = df.withColumn(
+        "rolling_sector_delta_5",
+        F.avg("abs_sector_delta").over(
+            driver_lap_window.rowsBetween(-5, -1)
+        ).cast(FloatType()),
+    ).fillna({"rolling_sector_delta_5": 0.0})
+
+    # tyre_stress_index: tyre_age × rolling_sector_delta_5 / 100
+    df = df.withColumn(
+        "tyre_stress_index",
+        (F.col("tyre_age") * F.col("rolling_sector_delta_5") / 100.0).cast(FloatType()),
+    )
+
+    # ── Tyre compound one-hot ─────────────────────────────────────────────────
+    df = df.withColumn("compound_soft", F.when(F.upper(F.col("tyre_compound")) == "SOFT", 1).otherwise(0).cast(IntegerType()))
+    df = df.withColumn("compound_medium", F.when(F.upper(F.col("tyre_compound")) == "MEDIUM", 1).otherwise(0).cast(IntegerType()))
+    df = df.withColumn("compound_hard", F.when(F.upper(F.col("tyre_compound")) == "HARD", 1).otherwise(0).cast(IntegerType()))
+
     return df.select(
         "session_key",
         "driver_number",
@@ -102,6 +145,21 @@ def build_pitstop_features(df):
         "track_temperature",
         "rainfall",
         "sector_delta",
+        # derived
+        "tyre_age_sq",
+        "heat_deg_interaction",
+        "wet_stint",
+        "abs_sector_delta",
+        # rolling
+        "deg_rate",
+        "gap_trend",
+        "rolling_sector_delta_5",
+        "tyre_stress_index",
+        # compound one-hot
+        "compound_soft",
+        "compound_medium",
+        "compound_hard",
+        # target + metadata
         "pitstop_within_3_laps",
         "tyre_compound",
         "event_time",
